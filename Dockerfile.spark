@@ -1,0 +1,28 @@
+FROM python:3.5-buster
+#8.0b4-buster
+#alpine3.10
+#
+# 3-slim AS build-env
+WORKDIR /app
+#RUN apk add --update alpine-sdk clang
+RUN apt update -qq && apt upgrade -qqy && \
+    apt install -y openjdk-8
+# gcc g++ && \
+#RUN pip install pandas
+# ln -s /usr/include/locale.h /usr/include/xlocale.h && \
+  
+RUN pip install	dash \
+	nltk \
+	pandas \
+	pyspark \
+	requests
+
+
+WORKDIR /app
+COPY dash_app.py /app
+
+
+# FROM gcr.io/distroless/python3
+# COPY --from=build-env /app /app
+# WORKDIR /app
+# CMD ["dash_app.py"]
