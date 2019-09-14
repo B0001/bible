@@ -1,0 +1,37 @@
+#FROM python:3.5-buster
+#8.0b4-buster
+###FROM python:alpine3.10
+FROM danigoland/py36-alpine-llvm6
+#
+# 3-slim AS build-env
+WORKDIR /app
+RUN apk add --update alpine-sdk
+#RUN apt update -qq && apt upgrade -qqy
+# RUN export BUILD_TMP='alpine-sdk git diffutils' \
+#  && apk update \
+#  && apk add $BUILD_TMP \
+#  && adduser -D apk \
+#  && adduser apk abuild \
+#  && sudo -iu apk abuild-keygen -a \
+#  && sudo -iu apk git clone --depth=1 -b pr-llvm-6 https://github.com/xentec/aports \
+#  && sudo -iu apk sh -xec 'cd aports/main/llvm6; abuild -r' \
+#  && cp /home/apk/.abuild/*.rsa.pub /etc/apk/keys \
+#  && apk add /home/apk/packages/main/$(uname -m)/*.apk \
+#  && deluser --remove-home apk \
+#  && rm -rf /var/cache/apk/APKINDEX* \
+#  && apk del --no-cache $BUILD_TMP
+ 
+#RUN pip install pandas
+RUN ln -s /usr/include/locale.h /usr/include/xlocale.h
+  
+RUN pip install	dash \
+    fastparquet \
+    pandas
+
+WORKDIR /app
+COPY dash_app.py /app
+
+# FROM gcr.io/distroless/python3
+# COPY --from=build-env /app /app
+# WORKDIR /app
+# CMD ["dash_app.py"]
