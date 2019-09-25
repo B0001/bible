@@ -1,9 +1,8 @@
-#!/usr/bin/env python
-# parse the Bible text
 import org.apache.spark.ml.feature.{HashingTF, RegexTokenizer}
 import org.apache.spark.sql.functions._
 import org.apache.spark.ml.linalg.SparseVector
 
+//  parse the Bible text
 // upload your vocabulary
 // from https://www.ef.edu/english-resources/english-vocabulary/top-100-words/
 val yourVocab = Array[String]("a", "about", "all", "also", "and", "as", "at", "be", "because", "but", "by", "can", "come", "could", "day", "do", "even", "find", "first", "for", "from", "get", "give", "go", "have", "he", "her", "here", "him", "his", "how", "I", "if", "in", "into", "it", "its", "just", "know", "like", "look", "make", "man", "many", "me", "more", "my", "new", "no", "not", "now", "of", "on", "one", "only", "or", "other", "our", "out", "people", "say", "see", "she", "so", "some", "take", "tell", "than", "that", "the", "their", "them", "then", "there", "these", "they", "thing", "think", "this", "those", "time", "to", "two", "up", "use", "very", "want", "way", "we", "well", "what", "when", "which", "who", "will", "with", "would", "year", "you", "your").
@@ -18,7 +17,8 @@ val lines = raw_lines.filter(_.contains(" -- ")).toSeq.toDF("raw").
         col("raw"),
         split(col("raw"), " -- ").getItem(0) as "verse",
         split(col("raw"), " -- ").getItem(1) as "ref" )
-val my_bucket = "gs://pure-polymer-205710/"
+// val my_bucket = "gs://pure-polymer-205710/"
+val my_bucket = "s3://bible-app-dash/"
 lines.write.mode("overwrite").parquet(my_bucket + "lines")
 
 val tokenizer = new RegexTokenizer().

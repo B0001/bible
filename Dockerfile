@@ -2,7 +2,7 @@ FROM spark-py:spark-docker
 
 WORKDIR /app
   
-RUN pip install	dash
+RUN pip install	dash s3fs
 
 WORKDIR /app
 COPY dash_app.py /app

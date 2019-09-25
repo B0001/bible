@@ -5,7 +5,8 @@ import dash_core_components as dcc
 import dash_html_components as html
 import pandas as pd
 
-df = pd.read_csv('lookup_df.csv')
+fname = 's3://bible-app-dash/lookup_df.csv'
+df = pd.read_csv(fname)
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
