@@ -1,0 +1,29 @@
+FROM ubuntu
+# Step 1: Install required packages
+# First, install the prerequisites: pkg-config, zip, g++, zlib1g-dev, unzip, and python3.
+RUN apt-get update && apt-get install -y \
+        wget \
+        pkg-config \
+        zip \
+        g++ \
+        zlib1g-dev \
+        unzip \
+        python3
+
+# Step 2: Download Bazel
+# Next, download the Bazel binary installer named bazel-<version>-installer-linux-x86_64.sh from the Bazel releases page on GitHub.
+RUN wget https://github.com/bazelbuild/bazel/releases/download/0.29.1/bazel-0.29.1-installer-linux-x86_64.sh
+
+# Step 3: Run the installer
+# Run the Bazel installer as follows:
+RUN chmod +x bazel-0.29.1-installer-linux-x86_64.sh && \
+    ./bazel-0.29.1-installer-linux-x86_64.sh --user
+
+# The --user flag installs Bazel to the $HOME/bin directory on your system and sets the .bazelrc path to $HOME/.bazelrc. Use the --help command to see additional installation options.
+# Step 4: Set up your environment
+# If you ran the Bazel installer with the --user flag as above, the Bazel executable is installed in your $HOME/bin directory. It’s a good idea to add this directory to your default paths, as follows:
+ENV PATH="$PATH:/root/.bazel/bin"
+
+WORKDIR /py3
+RUN wget https://raw.githubusercontent.com/GoogleContainerTools/distroless/master/experimental/python3/BUILD && \
+    touch WORKSPACE

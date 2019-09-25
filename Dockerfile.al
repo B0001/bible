@@ -8,7 +8,8 @@ RUN python3 -m pip install --upgrade pip && \
     python3 -m pip install \
     	dash \
     	fastparquet \
-	pandas
+        pandas
+RUN python3 -m pip install s3fs
 
 WORKDIR /app
 COPY dash_app.py /app
