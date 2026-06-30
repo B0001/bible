@@ -144,20 +144,22 @@ per-user vocab state (item 15).
 16. **Per-word mastery model instead of a static known/unknown vocab file.**
     Replace the binary `my_vocab.txt` set with a per-word mastery probability
     learned from review history (knowledge-tracing style: Bayesian Knowledge
-    Tracing or a simpler logistic/half-life model). `comprehension_rate` becomes
-    a probability-weighted sum over verse stems rather than a hard membership
-    count. Depends on item 15 (persisted vocab) existing first.
+    Tracing [Corbett & Anderson 1994, pre-arXiv] or Deep Knowledge Tracing
+    [arXiv:1506.05908]). `comprehension_rate` becomes a probability-weighted sum
+    over verse stems rather than a hard membership count. Depends on item 15
+    (persisted vocab) existing first.
 17. **Spaced-repetition scheduling for "learn the next word"** (refines item 14):
     rank unknown words using a trainable forgetting-curve model — e.g. Duolingo's
     Half-Life Regression (Settles & Meeder, "A Trainable Spaced Repetition Model
-    for Language Learning") — instead of pure unlock-count, so the ranking
-    accounts for *when* a word is likely to be forgotten, not just how many
-    verses it gates.
+    for Language Learning", ACL 2016 — ACL Anthology P16-1174; not on arXiv, code
+    at github.com/duolingo/halflife-regression) — instead of pure unlock-count,
+    so the ranking accounts for *when* a word is likely to be forgotten, not just
+    how many verses it gates.
 18. **Lexical-complexity-aware scoring.** Augment `comprehension_rate` with a
-    per-word difficulty signal (cf. SemEval-2021 Lexical Complexity Prediction)
-    so two verses with the same raw known-word ratio can be told apart by how
-    *hard* their unknown words are — closer to a real i+1 estimate than a flat
-    ratio.
+    per-word difficulty signal (cf. SemEval-2021 Task 1: Lexical Complexity
+    Prediction, arXiv:2106.00473) so two verses with the same raw known-word
+    ratio can be told apart by how *hard* their unknown words are — closer to a
+    real i+1 estimate than a flat ratio.
 19. **Semantic-similarity fallback for unseen words.** Use word/sentence
     embeddings to treat a verse word as "near-known" if it's a close synonym of
     a vocab word, reducing false negatives from `parser.py`'s exact
@@ -167,6 +169,11 @@ per-user vocab state (item 15).
 Open question for this phase: items 16–19 need a place to store per-user review
 history (not currently modeled anywhere in this repo) — likely a prerequisite
 sub-item before 16, not yet broken out.
+
+_Citations verified via arXiv/ACL search 2026-06-30: DKT (1506.05908) and
+SemEval-2021 LCP (2106.00473) are real arXiv papers; the Settles & Meeder HLR
+paper is real but lives on the ACL Anthology, not arXiv; Bayesian Knowledge
+Tracing predates arXiv (1994) and has no arXiv entry._
 
 ## 5. Out of scope (for now)
 - Authentication / multi-user accounts.
