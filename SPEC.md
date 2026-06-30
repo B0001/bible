@@ -145,7 +145,18 @@ Phased; each item lists acceptance criteria.
     count descending. CLI: `--next-words N` (default 0 = off) + required
     `--next-words-out`. Tested in `test_parser.py` (single-word unlock,
     multi-verse ranking order, top-N truncation).
-15. **Pluggable translations / vocab profiles**; persist user vocab across runs.
+15. ✅ **Pluggable translations / vocab profiles; persist user vocab across
+    runs.** `--bible` and `--vocab` were already plain file paths, so swapping
+    translations or vocab profiles was just pointing at a different file — no
+    new machinery needed there. The missing piece was *persistence*:
+    `update_vocab_file()` + `--learn WORD [WORD ...]` appends newly-learned
+    words to the `--vocab` file (case-insensitive dedup, creates the file if
+    missing, one word per line), so a profile grows across runs instead of
+    requiring manual editing. Learned words apply to the same run too (loaded
+    after the update). Tested in `test_parser.py` (append, dedup, missing-file
+    creation, persisted word actually affects `load_vocab`). Explicitly *not*
+    built: auth/multi-user accounts (out of scope, §5) or a profile-selection
+    UI — a profile is just a vocab file path.
 
 ### Phase 5 — Research-backed personalization (proposed)
 Refines items 14–15 with approaches from the vocabulary-acquisition / CALL

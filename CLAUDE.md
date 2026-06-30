@@ -37,7 +37,11 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   writes a "what to learn next" ranking: `next_words_to_learn()` tallies, for
   every under-threshold verse, which single unknown stem would push it to or
   above `--known-rate` if learned, and ranks stems by how many verses they'd
-  unlock.
+  unlock. `--vocab PATH` doubles as a vocab *profile* — different files are
+  different profiles/translations, nothing special needed to swap them.
+  `--learn WORD [WORD ...]` calls `update_vocab_file()` to persist newly
+  learned words into that profile (case-insensitive dedup, applies to the same
+  run too).
 - **`dash_app.py`** — Plotly Dash web front end. Loads the graded CSV
   (`BIBLE_GRADED_CSV`, default `out/graded.csv`) and renders a sortable table
   filtered by a comprehension-rate RangeSlider and a reference/text search box

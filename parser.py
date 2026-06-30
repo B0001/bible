@@ -23,6 +23,10 @@ the comprehension sweet spot read more naturally than isolated verses.
 With ``--next-words N`` (N > 0), also ranks the top N unknown words by how
 many under-threshold verses learning each one (alone) would push to or above
 ``--known-rate`` -- the highest-leverage "what to learn next" words.
+
+A ``--vocab`` path is just a vocab *profile* -- point it at different files for
+different translations/learners. ``--learn WORD [WORD ...]`` appends newly
+learned words to that profile file, persisting vocab growth across runs.
 """
 import argparse
 import os
@@ -45,6 +49,38 @@ def load_vocab(path):
     """Read a whitespace-separated vocabulary file into a set of stems."""
     with open(os.path.expanduser(path)) as f:
         return set(stem_tokens(f.read()))
+
+
+def update_vocab_file(path, new_words):
+    """Append newly-learned ``new_words`` to the vocab file at ``path``.
+
+    Persists vocab growth across runs: words already present (case-insensitive)
+    are skipped, the file is created if it doesn't exist yet, and each added
+    word is written on its own line. Different ``--vocab`` paths are simply
+    different vocab profiles, so this is how a profile grows over time. Returns
+    the list of words actually appended (deduplicated, lowercased).
+    """
+    path = os.path.expanduser(path)
+    existing = set()
+    if os.path.exists(path):
+        with open(path) as f:
+            existing = {w.lower() for w in f.read().split()}
+
+    to_add = []
+    for word in new_words:
+        lw = word.lower()
+        if lw not in existing:
+            to_add.append(lw)
+            existing.add(lw)
+
+    if to_add:
+        out_dir = os.path.dirname(path)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        with open(path, "a") as f:
+            for word in to_add:
+                f.write(word + "\n")
+    return to_add
 
 
 def load_bible(path):
@@ -190,11 +226,22 @@ def main():
         "--next-words-out",
         help="output CSV path for the next-words ranking (required if --next-words > 0)",
     )
+    parser.add_argument(
+        "--learn",
+        nargs="+",
+        metavar="WORD",
+        help="add WORD(s) to the --vocab file, persisting them for this and future runs",
+    )
     args = parser.parse_args()
     if args.passage_window > 1 and not args.passage_out:
         parser.error("--passage-out is required when --passage-window > 1")
     if args.next_words > 0 and not args.next_words_out:
         parser.error("--next-words-out is required when --next-words > 0")
+
+    if args.learn:
+        added = update_vocab_file(args.vocab, args.learn)
+        if added:
+            print(f"Learned {len(added)} new word(s) -> {args.vocab}: {', '.join(added)}")
 
     vocab_stems = load_vocab(args.vocab)
     bible_df = load_bible(args.bible)
