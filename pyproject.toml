@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bible-reader"
+version = "0.1.0"
+description = "Vocabulary-graded Bible reader: rank verses by comprehension rate for language learning."
+requires-python = ">=3.11"
+dependencies = [
+    "polars>=1.0",
+    "nltk>=3.8",
+    "dash>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.5",
+]
+
+# Anchor pytest's rootdir here so it does not climb into a parent directory and
+# load an unrelated conftest.py. importmode=importlib keeps test modules isolated.
+[tool.pytest.ini_options]
+testpaths = ["."]
+addopts = "--import-mode=importlib"
+
+[tool.setuptools]
+py-modules = ["parser", "dash_app"]
+
+[tool.ruff]
+line-length = 100
