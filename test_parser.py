@@ -6,8 +6,10 @@ from parser import (
     grade,
     grade_passages,
     load_bible,
+    load_vocab,
     next_words_to_learn,
     stem_tokens,
+    update_vocab_file,
 )
 
 
@@ -140,3 +142,34 @@ def test_next_words_to_learn_respects_top_n():
     out = next_words_to_learn(df, vocab, known_rate=0.95, top_n=1)
     assert out.height == 1
     assert out["stem"].to_list() == [stem_tokens("cat")[0]]
+
+
+def test_update_vocab_file_appends_new_words(tmp_path):
+    p = tmp_path / "vocab.txt"
+    p.write_text("the cat\n")
+    added = update_vocab_file(str(p), ["dog", "fish"])
+    assert added == ["dog", "fish"]
+    assert p.read_text() == "the cat\ndog\nfish\n"
+
+
+def test_update_vocab_file_dedupes_case_insensitively(tmp_path):
+    p = tmp_path / "vocab.txt"
+    p.write_text("the Cat\n")
+    added = update_vocab_file(str(p), ["cat", "CAT", "dog", "dog"])
+    assert added == ["dog"]
+    assert p.read_text() == "the Cat\ndog\n"
+
+
+def test_update_vocab_file_creates_missing_file(tmp_path):
+    p = tmp_path / "new_profile" / "vocab.txt"
+    added = update_vocab_file(str(p), ["hello"])
+    assert added == ["hello"]
+    assert p.read_text() == "hello\n"
+
+
+def test_update_vocab_file_persists_for_load_vocab(tmp_path):
+    p = tmp_path / "vocab.txt"
+    p.write_text("the cat\n")
+    update_vocab_file(str(p), ["running"])
+    # "running" should now stem-match "run" thanks to the persisted word
+    assert stem_tokens("run")[0] in load_vocab(str(p))
