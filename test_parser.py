@@ -1,7 +1,14 @@
 """Tests for the comprehension-scoring core."""
 import polars as pl
 
-from parser import comprehension_rate, grade, load_bible, stem_tokens
+from parser import (
+    comprehension_rate,
+    grade,
+    grade_passages,
+    load_bible,
+    next_words_to_learn,
+    stem_tokens,
+)
 
 
 def test_all_known_is_one():
@@ -57,3 +64,79 @@ def test_load_bible_skips_malformed_lines(tmp_path):
     df = load_bible(str(p))
     assert df.height == 2
     assert df["ref"].to_list() == ["Gen 1:1", "Gen 1:2"]
+
+
+def test_grade_passages_slides_one_verse_at_a_time():
+    df = pl.DataFrame(
+        {
+            "verse": ["the cat sat", "on the mat", "in the sun"],
+            "ref": ["Gen 1:1", "Gen 1:2", "Gen 1:3"],
+        }
+    )
+    vocab = set(stem_tokens("the cat sat on mat in sun"))
+    out = grade_passages(df, vocab, window=2)
+    assert out.height == 2  # 3 verses, window 2 -> 2 sliding windows
+    assert out["start_ref"].to_list() == ["Gen 1:1", "Gen 1:2"]
+    assert out["end_ref"].to_list() == ["Gen 1:2", "Gen 1:3"]
+    assert out["num_verses"].to_list() == [2, 2]
+    assert out["comprehension_rate"][0] == 1.0
+
+
+def test_grade_passages_scores_as_one_combined_unit():
+    # neither verse alone is 100% known, but the union of their vocab is
+    df = pl.DataFrame(
+        {"verse": ["the cat", "a dog"], "ref": ["Gen 1:1", "Gen 1:2"]}
+    )
+    vocab = set(stem_tokens("the cat a dog"))
+    out = grade_passages(df, vocab, window=2)
+    assert out["comprehension_rate"][0] == 1.0
+
+
+def test_grade_passages_window_larger_than_corpus_is_empty():
+    df = pl.DataFrame({"verse": ["a b"], "ref": ["Gen 1:1"]})
+    vocab = set(stem_tokens("a b"))
+    out = grade_passages(df, vocab, window=5)
+    assert out.height == 0
+
+
+def test_next_words_to_learn_unlocks_single_missing_word():
+    df = pl.DataFrame(
+        {
+            "verse": ["the cat sat", "the dog ran", "the dog ran again"],
+            "ref": ["a", "b", "c"],
+        }
+    )
+    vocab = set(stem_tokens("the cat sat ran"))
+    # "the cat sat": fully known, already above threshold, excluded.
+    # "the dog ran": 2/3 known; learning "dog" alone -> 3/3 -> unlocked.
+    # "the dog ran again": 2/4 known; "dog" or "again" alone only reaches 3/4 -> not unlocked.
+    out = next_words_to_learn(df, vocab, known_rate=0.95)
+    assert out.height == 1
+    assert out["stem"].to_list() == stem_tokens("dog")
+    assert out["verses_unlocked"].to_list() == [1]
+
+
+def test_next_words_to_learn_orders_most_unlocks_first():
+    df = pl.DataFrame(
+        {
+            "verse": ["see the cat", "look at cat", "see the dog"],
+            "ref": ["a", "b", "c"],
+        }
+    )
+    vocab = set(stem_tokens("see the look at"))
+    out = next_words_to_learn(df, vocab, known_rate=0.95)
+    assert out["stem"].to_list() == [stem_tokens("cat")[0], stem_tokens("dog")[0]]
+    assert out["verses_unlocked"].to_list() == [2, 1]
+
+
+def test_next_words_to_learn_respects_top_n():
+    df = pl.DataFrame(
+        {
+            "verse": ["see the cat", "look at cat", "see the dog"],
+            "ref": ["a", "b", "c"],
+        }
+    )
+    vocab = set(stem_tokens("see the look at"))
+    out = next_words_to_learn(df, vocab, known_rate=0.95, top_n=1)
+    assert out.height == 1
+    assert out["stem"].to_list() == [stem_tokens("cat")[0]]

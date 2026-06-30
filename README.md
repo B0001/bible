@@ -50,10 +50,27 @@ python parser.py --bible nasb.txt --vocab my_words.txt --out out/graded.csv \
     --known-rate 0.95 --min-verse-length 1
 ```
 
+## Learner analytics
+
+`parser.py` can also surface two learning aids alongside the per-verse grading:
+
+```bash
+# Score contiguous 3-verse passages (find a readable multi-verse stretch)
+python parser.py --bible nasb.txt --vocab my_words.txt --out out/graded.csv \
+    --passage-window 3 --passage-out out/passages.csv
+
+# Rank the 20 highest-leverage words to learn next (each ranked by how many
+# almost-readable verses learning it alone would unlock)
+python parser.py --bible nasb.txt --vocab my_words.txt --out out/graded.csv \
+    --next-words 20 --next-words-out out/next_words.csv
+```
+
 ## Configuration
 
 `parser.py` flags: `--bible`, `--vocab`, `--out`, `--known-rate` (summary
-threshold, default 0.95), `--min-verse-length` (verses shorter than this score 0).
+threshold, default 0.95), `--min-verse-length` (verses shorter than this score 0),
+`--passage-window` (verses per passage, 1 = off) + `--passage-out`,
+`--next-words` (top N words to learn, 0 = off) + `--next-words-out`.
 
 `dash_app.py` env vars: `BIBLE_GRADED_CSV` (default `out/graded.csv`),
 `DASH_HOST` (default `127.0.0.1`), `DASH_PORT` (default `8050`), `DASH_DEBUG`.

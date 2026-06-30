@@ -128,11 +128,23 @@ Phased; each item lists acceptance criteria.
     own-data usage, config, Docker, dev commands.
 
 ### Phase 4 — Product depth (optional/stretch)
-12. **Stem- or lemma-aware matching** so morphological variants count as known.
-13. **Per-passage (not just per-verse) scoring** using `passage_min_verse_length`
-    and contiguous-window aggregation, to surface readable *passages*.
-14. **"Learn the next word" feature**: rank the unknown words by how many
-    near-95% verses they would unlock.
+12. ✅ **Stem- or lemma-aware matching** — delivered in Phase 1; it is the
+    canonical scoring formula (§3).
+13. ✅ **Per-passage (not just per-verse) scoring**: `grade_passages()` slides a
+    `--passage-window N`-verse window one verse at a time over the bible (file
+    order) and scores each window as one unit via the same `comprehension_rate`
+    formula over the concatenated text — surfaces readable multi-verse
+    *passages*, not just isolated verses. CLI: `--passage-window` (default 1 =
+    off) + `--passage-out`. Tested in `test_parser.py` (sliding behavior,
+    combined-unit scoring, corpus-shorter-than-window edge case).
+14. ✅ **"Learn the next word" feature**: `next_words_to_learn()` finds every
+    verse currently below `--known-rate`, and for each unknown stem in it,
+    checks whether adding *just that stem's* occurrences would push the verse's
+    comprehension rate to or above the threshold ("unlocking" it). Tallies
+    unlocks per stem across the corpus and returns the top N, ranked by unlock
+    count descending. CLI: `--next-words N` (default 0 = off) + required
+    `--next-words-out`. Tested in `test_parser.py` (single-word unlock,
+    multi-verse ranking order, top-N truncation).
 15. **Pluggable translations / vocab profiles**; persist user vocab across runs.
 
 ### Phase 5 — Research-backed personalization (proposed)

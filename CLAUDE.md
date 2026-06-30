@@ -28,7 +28,16 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   `comprehension_rate = (# verse stems in the stemmed vocab set) / (total stems)`;
   verses shorter than `--min-verse-length` score 0. Writes `ref, verse,
   comprehension_rate` to the `--out` CSV. Key functions: `stem_tokens`,
-  `comprehension_rate`, `grade`, `load_bible`, `load_vocab`.
+  `comprehension_rate`, `grade`, `load_bible`, `load_vocab`. With
+  `--passage-window N` (+ required `--passage-out`), also writes per-passage
+  scores: `grade_passages()` slides an N-verse window one verse at a time and
+  scores each window's concatenated text as a single unit, so multi-verse
+  passages near the comprehension sweet spot can be surfaced, not just
+  isolated verses. With `--next-words N` (+ required `--next-words-out`), also
+  writes a "what to learn next" ranking: `next_words_to_learn()` tallies, for
+  every under-threshold verse, which single unknown stem would push it to or
+  above `--known-rate` if learned, and ranks stems by how many verses they'd
+  unlock.
 - **`dash_app.py`** — Plotly Dash web front end. Loads the graded CSV
   (`BIBLE_GRADED_CSV`, default `out/graded.csv`) and renders a sortable table
   filtered by a comprehension-rate RangeSlider and a reference/text search box
