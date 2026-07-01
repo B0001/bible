@@ -21,7 +21,14 @@ GRADED_CSV = os.environ.get("BIBLE_GRADED_CSV", "out/graded.csv")
 
 
 def load_graded(path):
-    """Load the graded CSV; raise a clear error if the pipeline hasn't run."""
+    """Load the graded CSV from a local path or s3:// URI."""
+    if path.startswith("s3://"):
+        try:
+            import fsspec
+        except ImportError:
+            raise ImportError("pip install 'bible-reader[s3]' to read from S3") from None
+        with fsspec.open(path, "rb") as f:
+            return pl.read_csv(f).sort("comprehension_rate", descending=True)
     if not os.path.exists(path):
         raise FileNotFoundError(
             f"Graded data not found at {path!r}. Run the pipeline first, e.g.:\n"

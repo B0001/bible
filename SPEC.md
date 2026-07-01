@@ -197,7 +197,9 @@ Tracing predates arXiv (1994) and has no arXiv entry._
 - Non-English Bibles.
 
 ## 6. Open questions
-- Where does output live — local file, S3 (`s3://bible-app-dash/`), or both?
+
+None outstanding.
 
 _Resolved:_ single-machine **polars** pipeline (Spark dropped); **stem/lemma-aware**
-matching (Snowball) is canonical; sample data (`sample/`) ships in the repo.
+matching (Snowball) is canonical; sample data (`sample/`) ships in the repo; output
+paths accept `s3://` URIs (`pip install '.[s3]'` for `s3fs`).

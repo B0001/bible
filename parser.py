@@ -40,6 +40,7 @@ import csv
 import os
 import warnings
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -518,6 +519,25 @@ def study_queue(bible_df, profile, now, known_rate=0.95, review_p=_REVIEW_P, min
     )
 
 
+@contextmanager
+def _open_write(path):
+    """Open a local or s3:// path for binary writing; create local parent dirs."""
+    if path.startswith("s3://"):
+        try:
+            import fsspec
+        except ImportError:
+            raise ImportError("pip install 'bible-reader[s3]' to write to S3") from None
+        with fsspec.open(path, "wb") as f:
+            yield f
+    else:
+        expanded = os.path.expanduser(path)
+        d = os.path.dirname(expanded)
+        if d:
+            os.makedirs(d, exist_ok=True)
+        with open(expanded, "wb") as f:
+            yield f
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bible", required=True, help="path to '<verse> -- <ref>' text")
@@ -656,10 +676,8 @@ def main():
             .alias("effort")
         )
 
-    out_dir = os.path.dirname(os.path.expanduser(args.out))
-    if out_dir:
-        os.makedirs(out_dir, exist_ok=True)
-    graded.write_csv(os.path.expanduser(args.out))
+    with _open_write(args.out) as f:
+        graded.write_csv(f)
 
     easy = graded.filter(pl.col("comprehension_rate") >= args.known_rate)
     print(
@@ -669,10 +687,8 @@ def main():
 
     if args.passage_window > 1:
         passages = grade_passages(bible_df, vocab_stems, args.passage_window, args.min_verse_length)
-        passage_out_dir = os.path.dirname(os.path.expanduser(args.passage_out))
-        if passage_out_dir:
-            os.makedirs(passage_out_dir, exist_ok=True)
-        passages.write_csv(os.path.expanduser(args.passage_out))
+        with _open_write(args.passage_out) as f:
+            passages.write_csv(f)
 
         easy_passages = passages.filter(pl.col("comprehension_rate") >= args.known_rate)
         print(
@@ -684,10 +700,8 @@ def main():
         next_words = next_words_to_learn(
             bible_df, vocab_stems, args.known_rate, args.min_verse_length, args.next_words
         )
-        next_words_out_dir = os.path.dirname(os.path.expanduser(args.next_words_out))
-        if next_words_out_dir:
-            os.makedirs(next_words_out_dir, exist_ok=True)
-        next_words.write_csv(os.path.expanduser(args.next_words_out))
+        with _open_write(args.next_words_out) as f:
+            next_words.write_csv(f)
         print(f"Ranked {next_words.height} next words to learn -> {args.next_words_out}")
 
     if args.study > 0:
@@ -697,10 +711,8 @@ def main():
             min_verse_length=args.min_verse_length,
             top_n=args.study,
         )
-        study_out_dir = os.path.dirname(os.path.expanduser(args.study_out))
-        if study_out_dir:
-            os.makedirs(study_out_dir, exist_ok=True)
-        queue.write_csv(os.path.expanduser(args.study_out))
+        with _open_write(args.study_out) as f:
+            queue.write_csv(f)
         review_count = queue.filter(pl.col("action") == "review").height
         learn_count = queue.filter(pl.col("action") == "learn").height
         print(
