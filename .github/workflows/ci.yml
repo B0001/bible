@@ -20,3 +20,33 @@ jobs:
         run: ruff check .
       - name: Test
         run: pytest
+
+  test-lexical:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install with lexical extra
+        run: pip install -e '.[dev,lexical]'
+      - name: Download NLTK data
+        run: python -m nltk.downloader stopwords
+      - name: Test lexical
+        run: pytest -m lexical
+
+  test-semantic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install with semantic extra
+        run: pip install -e '.[dev,semantic]'
+      - name: Download NLTK data
+        run: python -m nltk.downloader stopwords
+      - name: Download spaCy model
+        run: python -m spacy download en_core_web_md
+      - name: Test semantic
+        run: pytest -m semantic

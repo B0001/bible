@@ -158,44 +158,33 @@ Phased; each item lists acceptance criteria.
     built: auth/multi-user accounts (out of scope, §5) or a profile-selection
     UI — a profile is just a vocab file path.
 
-### Phase 5 — Research-backed personalization (proposed)
+### Phase 5 — Research-backed personalization ✅ DONE
 Refines items 14–15 with approaches from the vocabulary-acquisition / CALL
-(computer-assisted language learning) literature instead of ad hoc heuristics.
-Not started; sequence after Phase 4 since each item below depends on persisted
-per-user vocab state (item 15).
+(computer-assisted language learning) literature. Full implementation blueprint
+in [`PHASE5_DESIGN.md`](PHASE5_DESIGN.md).
 
-**A concrete implementation blueprint for items 16–19 — data-model schemas,
-formulas, function signatures, packaging, sequencing, and the design decisions
-that resolve the ambiguity below — lives in [`PHASE5_DESIGN.md`](PHASE5_DESIGN.md).**
-
-16. **Per-word mastery model instead of a static known/unknown vocab file.**
-    Replace the binary `my_vocab.txt` set with a per-word mastery probability
-    learned from review history (knowledge-tracing style: Bayesian Knowledge
-    Tracing [Corbett & Anderson 1994, pre-arXiv] or Deep Knowledge Tracing
-    [arXiv:1506.05908]). `comprehension_rate` becomes a probability-weighted sum
-    over verse stems rather than a hard membership count. Depends on item 15
-    (persisted vocab) existing first.
-17. **Spaced-repetition scheduling for "learn the next word"** (refines item 14):
-    rank unknown words using a trainable forgetting-curve model — e.g. Duolingo's
-    Half-Life Regression (Settles & Meeder, "A Trainable Spaced Repetition Model
-    for Language Learning", ACL 2016 — ACL Anthology P16-1174; not on arXiv, code
-    at github.com/duolingo/halflife-regression) — instead of pure unlock-count,
-    so the ranking accounts for *when* a word is likely to be forgotten, not just
-    how many verses it gates.
-18. **Lexical-complexity-aware scoring.** Augment `comprehension_rate` with a
-    per-word difficulty signal (cf. SemEval-2021 Task 1: Lexical Complexity
-    Prediction, arXiv:2106.00473) so two verses with the same raw known-word
-    ratio can be told apart by how *hard* their unknown words are — closer to a
-    real i+1 estimate than a flat ratio.
-19. **Semantic-similarity fallback for unseen words.** Use word/sentence
-    embeddings to treat a verse word as "near-known" if it's a close synonym of
-    a vocab word, reducing false negatives from `parser.py`'s exact
-    stem-membership check (e.g. a known noun whose adjective form isn't a
-    Snowball-recognized variant).
-
-Open question for this phase: items 16–19 need a place to store per-user review
-history (not currently modeled anywhere in this repo) — likely a prerequisite
-sub-item before 16, not yet broken out.
+16. ✅ **Per-word mastery model.** `WordHistory` dataclass, `load_profile()`,
+    `record_review()`, and `--review WORD correct|wrong` replace the binary
+    vocab set with a per-word history log (`<vocab>.reviews.csv`). Half-life
+    recall model (`half_life()`, `recall_prob()`) and `weighted_comprehension_rate()`
+    score verses by mean recall probability; `--decay` enables time-decayed
+    scoring. Backward-compatible: without `--decay` and with a seed-only profile
+    the result is byte-identical to the binary formula.
+17. ✅ **Spaced-repetition study queue** (refines item 14). `study_queue()`
+    combines due reviews (recall prob < 0.5, most-forgotten first) with the
+    existing unlock ranking into one ranked DataFrame (`stem, action, score,
+    reason`). CLI: `--study N --study-out PATH`.
+18. ✅ **Lexical-complexity-aware scoring.** `verse_effort()` sums
+    `d(w) * (1 - recall_prob)` per verse token where `d(w) = clamp(1 -
+    zipf_frequency(w) / 8, 0, 1)` via `wordfreq`. `--effort` adds an `effort`
+    column to the graded output. Requires `pip install '.[lexical]'`; degrades
+    to `d=1` (unknown-word count) with a warning when the extra is absent.
+19. ✅ **Semantic-similarity fallback.** `SemanticModel` pre-computes spaCy
+    `en_core_web_md` vectors for the vocab's *surface words* (not stems) so
+    unknown verse tokens that are close synonyms of known words get partial
+    credit: `p_effective = max(recall_prob, SIM_WEIGHT * cosine)` with
+    `SIM_TAU = 0.6`, `SIM_WEIGHT = 0.8`. `--semantic` enables it. Requires
+    `pip install '.[semantic]'`; degrades to `credit=0` when absent.
 
 _Citations verified via arXiv/ACL search 2026-06-30: DKT (1506.05908) and
 SemEval-2021 LCP (2106.00473) are real arXiv papers; the Settles & Meeder HLR
