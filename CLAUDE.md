@@ -46,15 +46,26 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   `--decay` grades by time-decayed recall probability
   (`weighted_comprehension_rate()` over a half-life model:
   `load_profile`/`recall_prob`/`half_life`) instead of the binary known set.
-  Both are opt-in; with `--decay` off and no reviews, scoring is byte-identical
+  `--study N --study-out PATH` produces a combined study queue via `study_queue()`:
+  due reviews (recall prob < 0.5, most-forgotten first) then new-word unlock
+  ranking; columns `stem, action, score, reason`. `--effort` adds a per-verse
+  `effort` column via `verse_effort()` — sum of `d(w)*(1-recall_prob)` where
+  `d(w) = clamp(1 - zipf/8, 0, 1)`; requires `pip install '.[lexical]'` (wordfreq),
+  degrades to d=1 with a warning when absent. `--semantic` grants partial credit to
+  unknown verse tokens similar to known vocab words via `SemanticModel` /
+  `load_semantic_model()`; requires `pip install '.[semantic]'` (spaCy
+  `en_core_web_md`), embeds **surface forms** (not stems), degrades to credit=0
+  when absent. All Phase 5 flags are opt-in; without them scoring is byte-identical
   to the binary path. Review logs (`*.reviews.csv`) are gitignored.
 - **`dash_app.py`** — Plotly Dash web front end. Loads the graded CSV
   (`BIBLE_GRADED_CSV`, default `out/graded.csv`) and renders a sortable table
   filtered by a comprehension-rate RangeSlider and a reference/text search box
   (callback-driven). Host/port/debug come from env vars (`DASH_HOST`,
   `DASH_PORT`, `DASH_DEBUG`).
-- **`test_parser.py`** — pytest unit tests for the scoring core (exact rates,
-  empty verse, case-insensitivity, stem-variant matching).
+- **`test_parser.py`** — 47 pytest unit tests covering scoring core, Phase 5
+  recall model, study queue, lexical effort, and semantic credit. Tests marked
+  `@pytest.mark.lexical` / `@pytest.mark.semantic` skip when those extras are
+  absent; CI runs them in separate jobs that install the extras.
 - **`sample/`** — runnable sample data: `nasb_sample.txt` (12 verses) and
   `my_vocab.txt` (EF top-100 English words, rescued from the old Scala file).
 
@@ -90,18 +101,10 @@ python3 start.py --region us-east-1 --user ec2-user --pem key.pem [--instance_id
 
 ## Deployment / infra
 
-The remaining `Dockerfile.*` variants are exploratory attempts at a small image,
-not a chosen standard — pick deliberately, don't assume one is "the" Dockerfile
-(SPEC.md Phase 3 item 8 calls for collapsing them to one):
-- `Dockerfile` — `FROM spark-py:spark-docker`, adds `dash` + `s3fs`. This was the
-  Spark-on-k8s path; its base image was built by `spark-k8s-instructions.sh`,
-  which has since been deleted (Spark/pandas were dropped per SPEC.md §4), so
-  this Dockerfile can no longer be built as-is.
-- `Dockerfile.al` (amazonlinux), `Dockerfile.llvm` (alpine), `Dockerfile.distroless`
-  (Bazel + distroless base) — size/footprint experiments, also stale (e.g. install
-  `pandas`/`fastparquet`, not the current polars/dash/nltk stack).
+One `Dockerfile` on `python:3.12-slim`: installs from `requirements.txt` (core
+deps only — optional extras are not in the image), downloads NLTK stopwords,
+pre-grades the sample data, and `CMD`s `dash_app.py` on `0.0.0.0:8050`.
+`requirements.txt` mirrors the core pyproject deps; `pyproject.toml` is canonical.
 
-Supporting scripts: `aws-builder-userdata.sh` / `gcp-builder-userdata.sh`
-(cloud-init bootstrap for a build VM), `minio-start.sh` (local S3-compatible store
-for testing the bucket I/O). `requirements.txt` duplicates the pyproject deps;
-`pyproject.toml` is canonical (see pytest note above).
+Supporting scripts (`aws-builder-userdata.sh`, `gcp-builder-userdata.sh`,
+`minio-start.sh`, `start.py`) are infra helpers unrelated to the app logic.
