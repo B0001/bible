@@ -43,6 +43,12 @@ df = load_graded(GRADED_CSV)
 
 app = Dash(__name__)
 app.title = "Bible Reader — graded by your vocabulary"
+server = app.server  # gunicorn entry point: `gunicorn dash_app:server`
+
+
+@server.route("/health")
+def health():
+    return "ok", 200
 
 
 def to_records(frame):

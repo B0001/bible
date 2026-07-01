@@ -20,4 +20,4 @@ RUN python parser.py --bible sample/nasb_sample.txt \
 
 ENV DASH_HOST=0.0.0.0 DASH_PORT=8050
 EXPOSE 8050
-CMD ["python", "dash_app.py"]
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${DASH_PORT:-8050} --workers 2 dash_app:server"]
