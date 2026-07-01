@@ -191,6 +191,47 @@ SemEval-2021 LCP (2106.00473) are real arXiv papers; the Settles & Meeder HLR
 paper is real but lives on the ACL Anthology, not arXiv; Bayesian Knowledge
 Tracing predates arXiv (1994) and has no arXiv entry._
 
+## Phase 6 — Production hardening
+
+Two blockers preventing production deployment; everything else is acceptable for
+internal/low-traffic use.
+
+### 6a. Gunicorn WSGI server
+
+**Problem:** `app.run()` uses Flask's single-threaded dev server. One slow request
+blocks all others; Flask itself logs a warning that this is not for production.
+
+**Fix:**
+- Add `gunicorn>=21` to `pyproject.toml` core deps and `requirements.txt`.
+- Expose `server = app.server` in `dash_app.py` (gunicorn entry point).
+- Replace Dockerfile `CMD` with:
+  `gunicorn --bind 0.0.0.0:${DASH_PORT:-8050} --workers 2 dash_app:server`
+- Keep `app.run(...)` block under `if __name__ == "__main__":` for local dev.
+
+Worker count: 2 is conservative and safe — each worker loads the full DataFrame
+into memory, so this is memory-bound. Increase if CPU becomes the bottleneck.
+
+_Acceptance:_ `docker run` serves requests through gunicorn; Flask dev-server
+warning is gone; two concurrent requests complete in parallel.
+
+### 6b. Health check endpoint
+
+**Problem:** No `/health` route. Load balancers (ALB, nginx, k8s liveness probe)
+have no signal that the app is up and the CSV loaded successfully.
+
+**Fix:** Three lines in `dash_app.py` after `df = load_graded(...)`:
+```python
+@app.server.route("/health")
+def health():
+    return "ok", 200
+```
+
+The endpoint lives after `df = load_graded(...)` so it only becomes reachable
+once the data is loaded — a meaningful readiness signal, not just "process alive."
+
+_Acceptance:_ `curl localhost:8050/health` returns `200 ok`; a curl to `/health`
+before the CSV exists raises before the route is registered (startup fails fast).
+
 ## 5. Out of scope (for now)
 - Authentication / multi-user accounts.
 - Cloud cost optimization of the build images (the Dockerfile size experiments).
