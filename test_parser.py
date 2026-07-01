@@ -1,4 +1,6 @@
 """Tests for the comprehension-scoring core."""
+from datetime import datetime, timedelta, timezone
+
 import polars as pl
 import pytest
 
@@ -6,11 +8,16 @@ from parser import (
     comprehension_rate,
     grade,
     grade_passages,
+    half_life,
     load_bible,
+    load_profile,
     load_vocab,
     next_words_to_learn,
+    recall_prob,
+    record_review,
     stem_tokens,
     update_vocab_file,
+    weighted_comprehension_rate,
 )
 
 
@@ -185,3 +192,67 @@ def test_update_vocab_file_persists_for_load_vocab(tmp_path):
     update_vocab_file(str(p), ["running"])
     # "running" should now stem-match "run" thanks to the persisted word
     assert stem_tokens("run")[0] in load_vocab(str(p))
+
+
+# --------------------------------------------------------------------------- #
+# Phase 5: review history + half-life recall model
+# --------------------------------------------------------------------------- #
+
+NOW = datetime(2026, 6, 30, tzinfo=timezone.utc)
+
+
+def test_record_review_creates_log_and_load_profile_replays(tmp_path):
+    p = tmp_path / "vocab.txt"
+    p.write_text("faith\n")
+    record_review(str(p), "faith", correct=True, when=NOW)
+    record_review(str(p), "faith", correct=False, when=NOW)
+    profile = load_profile(str(p))
+    stem = stem_tokens("faith")[0]
+    assert profile[stem].n_correct == 1
+    assert profile[stem].n_incorrect == 1
+    assert profile[stem].last_seen == NOW
+
+
+def test_load_profile_includes_review_only_words(tmp_path):
+    p = tmp_path / "vocab.txt"
+    p.write_text("faith\n")  # "grace" only ever appears in the review log
+    record_review(str(p), "grace", correct=True, when=NOW)
+    profile = load_profile(str(p))
+    assert stem_tokens("grace")[0] in profile
+
+
+def test_half_life_grows_with_net_correct():
+    from parser import WordHistory
+
+    weak = WordHistory(n_correct=0, n_incorrect=0)
+    strong = WordHistory(n_correct=3, n_incorrect=0)
+    assert half_life(strong) > half_life(weak)
+
+
+def test_recall_prob_decays_over_time():
+    from parser import WordHistory
+
+    hist = WordHistory(n_correct=1, n_incorrect=0, last_seen=NOW)
+    fresh = recall_prob(hist, NOW, decay=True)
+    later = recall_prob(hist, NOW + timedelta(days=30), decay=True)
+    assert fresh == pytest.approx(1.0)
+    assert 0.0 < later < fresh
+
+
+def test_recall_prob_unknown_and_decay_off():
+    from parser import WordHistory
+
+    assert recall_prob(None, NOW, decay=True) == 0.0          # not in profile
+    hist = WordHistory(last_seen=NOW - timedelta(days=999))
+    assert recall_prob(hist, NOW, decay=False) == 1.0         # binary "known"
+
+
+def test_weighted_rate_matches_binary_when_decay_off():
+    # Backward-compatibility guarantee from PHASE5_DESIGN.md §0.3
+    vocab_text = "the cat sat on"
+    p_profile = {s: __import__("parser").WordHistory() for s in stem_tokens(vocab_text)}
+    vocab = set(stem_tokens(vocab_text))
+    for verse in ["the cat sat", "the dog ran on", "!!!", "sat quietly"]:
+        assert weighted_comprehension_rate(
+            verse, p_profile, NOW, decay=False
+        ) == comprehension_rate(verse, vocab)
