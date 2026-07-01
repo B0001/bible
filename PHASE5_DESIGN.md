@@ -160,6 +160,23 @@ p_effective(w) = max(recall_prob(w), credit(w))
 `credit` is capped below 1 so similarity never fully substitutes for real
 knowledge. Plug `p_effective` into the weighted comprehension of §2.
 
+**Critical design constraint — embed surface forms, not stems.** The rest of the
+pipeline scores on Snowball *stems*, but embedding models are keyed on *surface
+words*. Many stems are non-words (`above`→`abov`, `mercy`→`merci`,
+`believe`→`believ`) and would be out-of-vocabulary in the embedding model, so
+embedding the stem directly makes this feature return mostly zeros — silently
+broken. Therefore compute similarity on **surface forms** on both sides:
+
+- vocab side: the profile's stored *surface* words (the vocab file keeps real
+  words, e.g. "running"), embedded directly — no stemming;
+- verse side: the raw verse tokens (before stemming);
+- then attach each unknown verse token's `credit` to *its* stem, so it flows into
+  the stem-keyed `weighted_comprehension_rate` of §2.
+
+Concretely: `emb(w)` above is the vector of the **surface token**, and
+`v in profile` ranges over surface vocab words, not stems. If a surface token is
+itself OOV in the embedding model, `credit = 0` for it (no worse than today).
+
 **Embeddings:** keep light — spaCy `en_core_web_md` vectors or gensim GloVe, **not**
 torch/transformers (image-size constraint, decision §0.4). Gate behind `[semantic]`
 extra; if absent, `credit(w)=0` (current behavior) + a warning.
