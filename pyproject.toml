@@ -11,6 +11,7 @@ dependencies = [
     "polars>=1.0",
     "nltk>=3.8",
     "dash>=2.0",
+    "gunicorn>=21",
 ]
 
 [project.optional-dependencies]
