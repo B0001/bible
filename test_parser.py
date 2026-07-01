@@ -1,5 +1,6 @@
 """Tests for the comprehension-scoring core."""
 import polars as pl
+import pytest
 
 from parser import (
     comprehension_rate,
@@ -39,6 +40,17 @@ def test_min_verse_length_guard():
     vocab = set(stem_tokens("the cat"))
     # one token, but threshold of 2 -> treated as too short
     assert comprehension_rate("cat", vocab, min_verse_length=2) == 0.0
+
+
+def test_empty_verse_with_min_length_zero_does_not_divide_by_zero():
+    # min_verse_length=0 must not trigger 0/0 on a verse with no word tokens
+    assert comprehension_rate("!!! ???", set(), min_verse_length=0) == 0.0
+
+
+def test_grade_passages_rejects_nonpositive_window():
+    df = pl.DataFrame({"verse": ["a b"], "ref": ["Gen 1:1"]})
+    with pytest.raises(ValueError):
+        grade_passages(df, set(), window=0)
 
 
 def test_case_insensitive():

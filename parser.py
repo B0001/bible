@@ -104,7 +104,9 @@ def comprehension_rate(verse, vocab_stems, min_verse_length=1):
     Returns 0.0 for verses shorter than ``min_verse_length`` tokens.
     """
     stems = stem_tokens(verse)
-    if len(stems) < min_verse_length:
+    # Guard against division by zero for empty/punctuation-only verses, even when
+    # min_verse_length is set to 0.
+    if not stems or len(stems) < min_verse_length:
         return 0.0
     known = sum(1 for stem in stems if stem in vocab_stems)
     return known / len(stems)
@@ -133,6 +135,8 @@ def grade_passages(bible_df, vocab_stems, window, min_verse_length=1):
     ``comprehension_rate``, ``num_verses``; empty if the corpus is shorter than
     ``window``.
     """
+    if window < 1:
+        raise ValueError("window must be >= 1")
     refs = bible_df["ref"].to_list()
     verses = bible_df["verse"].to_list()
     rows = [
