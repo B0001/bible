@@ -180,6 +180,22 @@ Core install stays polars/nltk/dash only. CI runs the core suite; add an optiona
 job that installs extras and runs the §3/§4 tests (marked `@pytest.mark.lexical` /
 `semantic`, skipped when the import is unavailable).
 
+## Implementation status
+
+- ✅ **P5.0 (§1) — review-history data model.** `WordHistory`, `load_profile()`,
+  `record_review()`, and `--review WORD correct|wrong` are implemented in
+  `parser.py`; the log lives at `<vocab>.reviews.csv`. Tested.
+- ✅ **P5.1 (§2 core) — half-life recall + probability-weighted comprehension.**
+  `half_life()`, `recall_prob()`, `weighted_comprehension_rate()` and the
+  `--decay` grading path are implemented and tested, including the §0.3
+  backward-compat guarantee (decay off + seed-only == the binary formula).
+- ☐ **P5.2 (§2 queue) — study queue / scheduling** (`study_queue`, `--study`).
+- ☐ **P5.3 (§3) — lexical complexity** (`[lexical]` extra).
+- ☐ **P5.4 (§4) — semantic fallback** (`[semantic]` extra).
+
+P5.2–P5.4 are the remaining, self-contained pieces — straightforward to build
+from the specs above.
+
 ## 6. Sequencing & dependencies
 
 ```
