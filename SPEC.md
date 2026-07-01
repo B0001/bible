@@ -196,7 +196,7 @@ Tracing predates arXiv (1994) and has no arXiv entry._
 Two blockers preventing production deployment; everything else is acceptable for
 internal/low-traffic use.
 
-### 6a. Gunicorn WSGI server
+### 6a. Gunicorn WSGI server ✅ DONE
 
 **Problem:** `app.run()` uses Flask's single-threaded dev server. One slow request
 blocks all others; Flask itself logs a warning that this is not for production.
@@ -214,7 +214,7 @@ into memory, so this is memory-bound. Increase if CPU becomes the bottleneck.
 _Acceptance:_ `docker run` serves requests through gunicorn; Flask dev-server
 warning is gone; two concurrent requests complete in parallel.
 
-### 6b. Health check endpoint
+### 6b. Health check endpoint ✅ DONE
 
 **Problem:** No `/health` route. Load balancers (ALB, nginx, k8s liveness probe)
 have no signal that the app is up and the CSV loaded successfully.
