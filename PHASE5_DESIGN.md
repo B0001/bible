@@ -227,14 +227,25 @@ independent of each other and can be done in any order / by separate sessions. A
 lighter model can take P5.0 → P5.1 → P5.2 in sequence; P5.3 and P5.4 are
 self-contained add-ons.
 
-## 7. Open questions for the user
+## 7. Decisions (all resolved)
 
-1. **Profile storage:** flat `reviews.csv` (recommended — matches the
-   CSV/polars/local-file style) or SQLite (better for large logs / concurrent
-   writes)?
-2. **Where do review outcomes come from?** A manual `--review` CLI for now, or do
-   you want a quiz mode in the Dash app to generate them (separate, larger effort)?
-3. **Embedding dependency budget:** is a ~40 MB spaCy `md` model acceptable, or
-   should item 19 stay deferred to keep the image lean?
-4. **Decay default:** opt-in via `--decay` (recommended, fully backward compatible)
-   or on whenever a `reviews.csv` exists?
+1. **Profile storage → flat `reviews.csv`.** ✅ Resolved and implemented in P5.0
+   (`<vocab>.reviews.csv`). SQLite not needed at this scale.
+2. **Review outcomes → manual `--review` CLI for now.** ✅ Implemented in P5.0. A
+   quiz mode in the Dash app is a separate, later effort (not in Phase 5 scope).
+3. **Embeddings → SHIP, as an optional extra.** ✅ Build P5.4 behind
+   `pip install '.[semantic]'` using spaCy `en_core_web_md` (~40 MB), embedding
+   **surface forms** per §4. Core image stays lean; feature degrades to
+   `credit = 0` when the extra is absent.
+4. **Decay → opt-in via `--decay`.** ✅ Keep the current behavior: decay is off by
+   default and only active when `--decay` is passed, even if a `reviews.csv`
+   exists. Fully backward compatible; do **not** auto-enable it.
+
+### Hand-off note for the next (lighter) model
+Build order: **P5.2 → P5.3 → P5.4** (all specs above are final).
+- P5.4 must embed **surface forms**, not stems (see §4's critical constraint), and
+  ship as the `[semantic]` extra with a graceful no-op when uninstalled.
+- Add `[lexical]` (wordfreq) and `[semantic]` (spacy + `en_core_web_md`) to
+  `pyproject.toml` optional-dependencies; keep core deps unchanged.
+- Mirror the existing test style in `test_parser.py`; mark extra-dependent tests
+  so they skip when the import is unavailable.
