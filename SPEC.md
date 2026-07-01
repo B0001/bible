@@ -198,9 +198,6 @@ Tracing predates arXiv (1994) and has no arXiv entry._
 
 ## 6. Open questions
 - Where does output live — local file, S3 (`s3://bible-app-dash/`), or both?
-- Is there an existing `my_vocab.txt` / `nasb.txt` to commit as sample data?
-- Stemming choice: Snowball (already imported) sufficient, or move to a lemmatizer
-  (WordNet) for more accurate variant matching? Snowball is the default.
 
 _Resolved:_ single-machine **polars** pipeline (Spark dropped); **stem/lemma-aware**
-matching is the canonical formula.
+matching (Snowball) is canonical; sample data (`sample/`) ships in the repo.
