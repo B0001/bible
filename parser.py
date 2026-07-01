@@ -31,11 +31,14 @@ learned words to that profile file, persisting vocab growth across runs.
 Phase 5 personalization (see PHASE5_DESIGN.md): ``--review WORD correct|wrong``
 logs a review to the profile's ``<vocab>.reviews.csv``; ``--decay`` then scores
 verses by time-decayed recall probability (a half-life model over that log)
-instead of a binary known/unknown set. Both are opt-in and off by default.
+instead of a binary known/unknown set. ``--study N --study-out PATH`` produces a
+combined study queue of up to N items: due reviews (recall prob below threshold)
+first, then new-word unlock recommendations. All Phase 5 flags are opt-in.
 """
 import argparse
 import csv
 import os
+import warnings
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -43,6 +46,19 @@ from datetime import datetime, timezone
 import polars as pl
 from nltk.stem.snowball import SnowballStemmer
 from nltk.tokenize import RegexpTokenizer
+
+try:
+    from wordfreq import zipf_frequency as _zipf_frequency
+    _WORDFREQ_AVAILABLE = True
+except ImportError:
+    _WORDFREQ_AVAILABLE = False
+
+try:
+    import numpy as _np
+    import spacy as _spacy
+    _SPACY_AVAILABLE = True
+except ImportError:
+    _SPACY_AVAILABLE = False
 
 TOKENIZER = RegexpTokenizer(r"\w+")
 STEMMER = SnowballStemmer("english", ignore_stopwords=True)
@@ -103,6 +119,9 @@ _H0 = 1.0        # base half-life for a brand-new word
 _GROWTH = 2.0    # half-life multiplier per net-correct review
 _H_MIN = 0.1     # clamp: ~2.4 hours
 _H_MAX = 365.0   # clamp: 1 year
+_REVIEW_P = 0.5  # recall probability below which a word is due for review
+_SIM_TAU = 0.6   # minimum cosine similarity to grant semantic credit
+_SIM_WEIGHT = 0.8  # maximum semantic credit (capped below 1.0)
 
 
 @dataclass
@@ -196,17 +215,148 @@ def recall_prob(hist, now, decay=True):
     return 2.0 ** (-elapsed_days / half_life(hist))
 
 
-def weighted_comprehension_rate(verse, profile, now, decay=True, min_verse_length=1):
-    """Comprehension rate as the mean recall probability over a verse's stems.
+def weighted_comprehension_rate(verse, profile, now, decay=True, min_verse_length=1, semantic_model=None):
+    """Comprehension rate as the mean effective recall probability over a verse's tokens.
 
-    Generalizes ``comprehension_rate``: with ``decay=False`` and a seed-only
-    profile this returns the identical value (known stems contribute 1.0,
-    unknown 0.0), so it is a drop-in that adds forgetting when decay is on.
+    Generalizes ``comprehension_rate``: with ``decay=False``, ``semantic_model=None``,
+    and a seed-only profile this returns the identical value (known stems 1.0, unknown
+    0.0). With ``decay=True``, recall decays over time. With a ``SemanticModel``,
+    unknown tokens that are semantically similar to a known vocab word receive partial
+    credit: ``p_effective = max(recall_prob, semantic_credit)``.
     """
-    stems = stem_tokens(verse)
-    if not stems or len(stems) < min_verse_length:
+    tokens = TOKENIZER.tokenize(verse.lower())
+    if not tokens or len(tokens) < min_verse_length:
         return 0.0
-    return sum(recall_prob(profile.get(s), now, decay) for s in stems) / len(stems)
+    total = 0.0
+    for token in tokens:
+        stem = STEMMER.stem(token)
+        p = recall_prob(profile.get(stem), now, decay)
+        if semantic_model is not None and p < 1.0:
+            p = max(p, semantic_model.credit(token))
+        total += p
+    return total / len(tokens)
+
+
+_wordfreq_warned = False
+
+
+def _word_difficulty(surface_word):
+    """Difficulty score d(w) ∈ [0,1]: 1 = very rare, 0 = extremely common.
+
+    Uses the Zipf frequency from ``wordfreq`` when the ``[lexical]`` extra is
+    installed: ``d = clamp(1 - zipf / 8, 0, 1)``. Falls back to ``d = 1`` with
+    a one-time warning when the extra is absent.
+    """
+    global _wordfreq_warned
+    if not _WORDFREQ_AVAILABLE:
+        if not _wordfreq_warned:
+            warnings.warn(
+                "wordfreq is not installed; pip install 'bible-reader[lexical]' for "
+                "lexical effort scores. Falling back to d(w)=1 for all words.",
+                ImportWarning,
+                stacklevel=3,
+            )
+            _wordfreq_warned = True
+        return 1.0
+    zipf = _zipf_frequency(surface_word.lower(), "en")
+    return max(0.0, min(1.0, 1.0 - zipf / 8.0))
+
+
+def verse_effort(verse, profile, now, decay=True):
+    """Lexical effort of the unknown/forgotten words in a verse.
+
+    ``effort = Σ_i d(surface_token_i) * (1 - p_i)`` where ``p_i`` is each
+    token's recall probability and ``d`` is the difficulty from
+    ``_word_difficulty``. Fully known words (``p = 1``) contribute zero; fully
+    unknown words contribute ``d(w)`` in full. With ``decay=False`` this reduces
+    to the sum of ``d(w)`` over strictly unknown stems, so two verses at the
+    same comprehension rate can be ranked by how *hard* their unknown words are.
+
+    Requires the ``[lexical]`` extra (``wordfreq``); degrades to ``d(w) = 1``
+    (i.e. effort = unknown-word count) when the extra is absent.
+    """
+    tokens = TOKENIZER.tokenize(verse.lower())
+    effort = 0.0
+    for token in tokens:
+        stem = STEMMER.stem(token)
+        p = recall_prob(profile.get(stem), _aware(now), decay=decay)
+        effort += _word_difficulty(token) * (1.0 - p)
+    return effort
+
+
+_semantic_warned = False
+
+
+class SemanticModel:
+    """Pre-computed semantic model for a profile's surface vocabulary.
+
+    Embeds the vocab's surface words (not Snowball stems) using a spaCy model so
+    that unknown verse tokens can receive credit when they are close synonyms of
+    known words (see PHASE5_DESIGN.md §4). Constructed via ``load_semantic_model``.
+    """
+
+    def __init__(self, nlp, profile_surface_words):
+        self._nlp = nlp
+        self._known_vecs = []
+        for word in profile_surface_words:
+            doc = nlp(word.lower())
+            if doc.has_vector:
+                self._known_vecs.append(doc.vector)
+
+    def credit(self, surface_token):
+        """Semantic credit for a surface token: ``SIM_WEIGHT * max_cosine`` if the
+        best cosine similarity to any known word ≥ ``SIM_TAU``, else 0."""
+        doc = self._nlp(surface_token.lower())
+        if not doc.has_vector or not self._known_vecs:
+            return 0.0
+        token_vec = doc.vector
+        norm = _np.linalg.norm(token_vec)
+        if norm == 0.0:
+            return 0.0
+        max_sim = 0.0
+        for kv in self._known_vecs:
+            kn = _np.linalg.norm(kv)
+            if kn > 0.0:
+                max_sim = max(max_sim, float(_np.dot(token_vec, kv) / (norm * kn)))
+        return _SIM_WEIGHT * max_sim if max_sim >= _SIM_TAU else 0.0
+
+
+def load_semantic_model(vocab_path):
+    """Load the spaCy model and pre-compute profile embeddings.
+
+    Returns a ``SemanticModel`` if spaCy and ``en_core_web_md`` are available;
+    returns ``None`` with a one-time warning otherwise. Surface words (not stems)
+    from the vocab file are embedded, per PHASE5_DESIGN.md §4's critical constraint.
+    """
+    global _semantic_warned
+
+    if not _SPACY_AVAILABLE:
+        if not _semantic_warned:
+            warnings.warn(
+                "spacy is not installed; pip install 'bible-reader[semantic]' for "
+                "semantic similarity scores. Falling back to credit=0.",
+                ImportWarning,
+                stacklevel=2,
+            )
+            _semantic_warned = True
+        return None
+
+    try:
+        nlp = _spacy.load("en_core_web_md")
+    except OSError:
+        if not _semantic_warned:
+            warnings.warn(
+                "spaCy model en_core_web_md not found; run "
+                "'python -m spacy download en_core_web_md'. Falling back to credit=0.",
+                ImportWarning,
+                stacklevel=2,
+            )
+            _semantic_warned = True
+        return None
+
+    with open(os.path.expanduser(vocab_path)) as f:
+        surface_words = f.read().split()
+    return SemanticModel(nlp, surface_words)
 
 
 def load_bible(path):
@@ -319,6 +469,55 @@ def next_words_to_learn(bible_df, vocab_stems, known_rate=0.95, min_verse_length
     )
 
 
+def study_queue(bible_df, profile, now, known_rate=0.95, review_p=_REVIEW_P, min_verse_length=1, top_n=20):
+    """Combined study queue: due reviews first, then new-word unlock ranking.
+
+    Due reviews: profile words whose recall_prob (with decay=True) is below
+    ``review_p``, sorted ascending by probability (most-forgotten first).
+    New words: the ``next_words_to_learn`` unlock ranking for stems absent from
+    the profile.
+
+    Returns a DataFrame with columns ``stem``, ``action`` (``"review"`` or
+    ``"learn"``), ``score`` (recall probability for reviews, unlock count for
+    learns), ``reason``; total rows capped at ``top_n``.
+    """
+    # Part 1: due reviews
+    review_rows = []
+    for stem, hist in profile.items():
+        p = recall_prob(hist, _aware(now), decay=True)
+        if p < review_p:
+            if hist.last_seen is not None:
+                elapsed = (_aware(now) - hist.last_seen).total_seconds() / 86400.0
+                reason = f"recall p={p:.2f}, {elapsed:.1f}d since last seen"
+            else:
+                reason = f"recall p={p:.2f}"
+            review_rows.append({"stem": stem, "action": "review", "score": p, "reason": reason})
+    review_rows.sort(key=lambda r: r["score"])  # ascending: most-forgotten first
+
+    # Part 2: new words — unknown stems ranked by verse-unlock count
+    vocab_stems = set(profile.keys())
+    new_words_df = next_words_to_learn(bible_df, vocab_stems, known_rate, min_verse_length, top_n)
+    learn_rows = [
+        {
+            "stem": row["stem"],
+            "action": "learn",
+            "score": float(row["verses_unlocked"]),
+            "reason": f"unlocks {row['verses_unlocked']} verse(s)",
+        }
+        for row in new_words_df.iter_rows(named=True)
+    ]
+
+    combined = (review_rows + learn_rows)[:top_n]
+    if not combined:
+        return pl.DataFrame(
+            schema={"stem": pl.Utf8, "action": pl.Utf8, "score": pl.Float64, "reason": pl.Utf8}
+        )
+    return pl.DataFrame(
+        combined,
+        schema={"stem": pl.Utf8, "action": pl.Utf8, "score": pl.Float64, "reason": pl.Utf8},
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bible", required=True, help="path to '<verse> -- <ref>' text")
@@ -374,11 +573,34 @@ def main():
         help="score with time-decayed recall (half-life model) from the review log "
         "instead of a binary known/unknown set",
     )
+    parser.add_argument(
+        "--study",
+        type=int,
+        default=0,
+        help="produce a study queue of top N items (due reviews + new words); 0 disables (default 0)",
+    )
+    parser.add_argument(
+        "--study-out",
+        help="output CSV path for the study queue (required if --study > 0)",
+    )
+    parser.add_argument(
+        "--effort",
+        action="store_true",
+        help="add a lexical-effort column to the graded output (requires [lexical] extra)",
+    )
+    parser.add_argument(
+        "--semantic",
+        action="store_true",
+        help="grant partial credit to verse words similar to known vocab words "
+        "(requires [semantic] extra: spacy + en_core_web_md)",
+    )
     args = parser.parse_args()
     if args.passage_window > 1 and not args.passage_out:
         parser.error("--passage-out is required when --passage-window > 1")
     if args.next_words > 0 and not args.next_words_out:
         parser.error("--next-words-out is required when --next-words > 0")
+    if args.study > 0 and not args.study_out:
+        parser.error("--study-out is required when --study > 0")
     if args.review and args.review[1] not in ("correct", "wrong"):
         parser.error("--review OUTCOME must be 'correct' or 'wrong'")
 
@@ -395,14 +617,25 @@ def main():
 
     vocab_stems = load_vocab(args.vocab)
     bible_df = load_bible(args.bible)
-    if args.decay:
+
+    now = None
+    profile = None
+    if args.decay or args.study > 0 or args.effort or args.semantic:
         now = datetime.now(timezone.utc)
         profile = load_profile(args.vocab)
+
+    semantic_model = None
+    if args.semantic:
+        semantic_model = load_semantic_model(args.vocab)
+
+    if args.decay or args.semantic:
         graded = bible_df.with_columns(
             pl.col("verse")
             .map_elements(
                 lambda v: weighted_comprehension_rate(
-                    v, profile, now, decay=True, min_verse_length=args.min_verse_length
+                    v, profile, now, decay=args.decay,
+                    min_verse_length=args.min_verse_length,
+                    semantic_model=semantic_model,
                 ),
                 return_dtype=pl.Float64,
             )
@@ -411,6 +644,16 @@ def main():
     else:
         graded = grade(bible_df, vocab_stems, args.min_verse_length).select(
             "ref", "verse", "comprehension_rate"
+        )
+
+    if args.effort:
+        graded = graded.with_columns(
+            pl.col("verse")
+            .map_elements(
+                lambda v: verse_effort(v, profile, now, decay=args.decay),
+                return_dtype=pl.Float64,
+            )
+            .alias("effort")
         )
 
     out_dir = os.path.dirname(os.path.expanduser(args.out))
@@ -446,6 +689,23 @@ def main():
             os.makedirs(next_words_out_dir, exist_ok=True)
         next_words.write_csv(os.path.expanduser(args.next_words_out))
         print(f"Ranked {next_words.height} next words to learn -> {args.next_words_out}")
+
+    if args.study > 0:
+        queue = study_queue(
+            bible_df, profile, now,
+            known_rate=args.known_rate,
+            min_verse_length=args.min_verse_length,
+            top_n=args.study,
+        )
+        study_out_dir = os.path.dirname(os.path.expanduser(args.study_out))
+        if study_out_dir:
+            os.makedirs(study_out_dir, exist_ok=True)
+        queue.write_csv(os.path.expanduser(args.study_out))
+        review_count = queue.filter(pl.col("action") == "review").height
+        learn_count = queue.filter(pl.col("action") == "learn").height
+        print(
+            f"Study queue: {review_count} due review(s), {learn_count} new word(s) -> {args.study_out}"
+        )
 
 
 if __name__ == "__main__":

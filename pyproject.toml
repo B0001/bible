@@ -18,12 +18,18 @@ dev = [
     "pytest>=8",
     "ruff>=0.5",
 ]
+lexical = ["wordfreq>=3"]
+semantic = ["spacy>=3"]
 
 # Anchor pytest's rootdir here so it does not climb into a parent directory and
 # load an unrelated conftest.py. importmode=importlib keeps test modules isolated.
 [tool.pytest.ini_options]
 testpaths = ["."]
 addopts = "--import-mode=importlib"
+markers = [
+    "lexical: tests requiring the [lexical] extra (wordfreq)",
+    "semantic: tests requiring the [semantic] extra (spacy + en_core_web_md)",
+]
 
 [tool.setuptools]
 py-modules = ["parser", "dash_app"]
