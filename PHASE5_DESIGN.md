@@ -206,9 +206,20 @@ job that installs extras and runs the §3/§4 tests (marked `@pytest.mark.lexica
   `half_life()`, `recall_prob()`, `weighted_comprehension_rate()` and the
   `--decay` grading path are implemented and tested, including the §0.3
   backward-compat guarantee (decay off + seed-only == the binary formula).
-- ☐ **P5.2 (§2 queue) — study queue / scheduling** (`study_queue`, `--study`).
-- ☐ **P5.3 (§3) — lexical complexity** (`[lexical]` extra).
-- ☐ **P5.4 (§4) — semantic fallback** (`[semantic]` extra).
+- ✅ **P5.2 (§2 queue) — study queue / scheduling.** `study_queue()` and `--study N
+  --study-out PATH` implemented in `parser.py`. Returns a polars DataFrame with
+  columns `stem, action, score, reason`; due reviews (ascending recall prob) first,
+  then new-word unlock ranking. 8 new tests in `test_parser.py`.
+- ✅ **P5.3 (§3) — lexical complexity.** `_word_difficulty()` and `verse_effort()`
+  implemented in `parser.py`; `--effort` flag adds an effort column to the graded
+  output CSV. Degrades to `d=1` (effort = unknown-word count) with a one-time
+  warning when `wordfreq` is absent. `[lexical]` added to `pyproject.toml`.
+  6 new tests; 2 marked `@pytest.mark.lexical` (skip when wordfreq not installed).
+- ✅ **P5.4 (§4) — semantic fallback.** `SemanticModel` class and
+  `load_semantic_model()` implemented in `parser.py`; `weighted_comprehension_rate`
+  extended with an optional `semantic_model` param. `--semantic` CLI flag enables
+  it; surface-form embeddings used per §4 constraint. `[semantic]` (spacy) added to
+  `pyproject.toml`. 6 new tests; 3 marked `@pytest.mark.semantic`.
 
 P5.2–P5.4 are the remaining, self-contained pieces — straightforward to build
 from the specs above.

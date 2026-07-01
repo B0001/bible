@@ -1,24 +1,32 @@
 """Tests for the comprehension-scoring core."""
+import importlib.util
 from datetime import datetime, timedelta, timezone
 
 import polars as pl
 import pytest
 
 from parser import (
+    SemanticModel,
     comprehension_rate,
     grade,
     grade_passages,
     half_life,
     load_bible,
     load_profile,
+    load_semantic_model,
     load_vocab,
     next_words_to_learn,
     recall_prob,
     record_review,
     stem_tokens,
+    study_queue,
     update_vocab_file,
+    verse_effort,
     weighted_comprehension_rate,
 )
+
+_wordfreq_available = importlib.util.find_spec("wordfreq") is not None
+_spacy_available = importlib.util.find_spec("spacy") is not None
 
 
 def test_all_known_is_one():
@@ -256,3 +264,258 @@ def test_weighted_rate_matches_binary_when_decay_off():
         assert weighted_comprehension_rate(
             verse, p_profile, NOW, decay=False
         ) == comprehension_rate(verse, vocab)
+
+
+# --------------------------------------------------------------------------- #
+# Phase 5.2: study queue
+# --------------------------------------------------------------------------- #
+
+from parser import WordHistory  # noqa: E402 (after NOW is defined above)
+
+
+def _old_hist(n_incorrect=2, days_ago=100):
+    """Helper: a WordHistory whose recall probability will be well below 0.5."""
+    return WordHistory(n_correct=0, n_incorrect=n_incorrect, last_seen=NOW - timedelta(days=days_ago))
+
+
+def test_study_queue_schema():
+    """Output always has the four required columns even when empty."""
+    queue = study_queue(pl.DataFrame({"verse": ["hello"], "ref": ["a"]}), {}, NOW)
+    assert set(queue.columns) == {"stem", "action", "score", "reason"}
+
+
+def test_study_queue_due_review_appears():
+    """A profile word with low recall probability shows up as a 'review' item."""
+    faith_stem = stem_tokens("faith")[0]
+    profile = {faith_stem: _old_hist()}
+    bible_df = pl.DataFrame({"verse": ["faith hope"], "ref": ["a"]})
+
+    queue = study_queue(bible_df, profile, NOW)
+    assert "review" in queue["action"].to_list()
+    assert faith_stem in queue.filter(pl.col("action") == "review")["stem"].to_list()
+
+
+def test_study_queue_new_word_appears():
+    """An unknown word that would unlock a verse appears as a 'learn' item."""
+    # Profile knows 2 of 3 words; learning the 3rd pushes comprehension to 3/3 >= 0.95
+    known_stems = stem_tokens("the sat")
+    profile = {s: WordHistory() for s in known_stems}
+    bible_df = pl.DataFrame({"verse": ["the cat sat"], "ref": ["a"]})
+
+    queue = study_queue(bible_df, profile, NOW)
+    assert "learn" in queue["action"].to_list()
+
+
+def test_study_queue_reviews_before_learns():
+    """Due reviews are ordered before new-word recommendations."""
+    faith_stem = stem_tokens("faith")[0]
+    profile = {faith_stem: _old_hist()}
+    bible_df = pl.DataFrame({"verse": ["the cat sat"], "ref": ["a"]})
+
+    queue = study_queue(bible_df, profile, NOW)
+    actions = queue["action"].to_list()
+    if "review" in actions and "learn" in actions:
+        last_review = max(i for i, a in enumerate(actions) if a == "review")
+        first_learn = min(i for i, a in enumerate(actions) if a == "learn")
+        assert last_review < first_learn
+
+
+def test_study_queue_reviews_sorted_ascending_by_score():
+    """Most-forgotten words (lowest recall prob) come first among review items."""
+    faith_stem = stem_tokens("faith")[0]
+    grace_stem = stem_tokens("grace")[0]
+    profile = {
+        faith_stem: WordHistory(n_correct=0, n_incorrect=3, last_seen=NOW - timedelta(days=200)),
+        grace_stem: WordHistory(n_correct=0, n_incorrect=1, last_seen=NOW - timedelta(days=30)),
+    }
+    bible_df = pl.DataFrame({"verse": ["faith grace"], "ref": ["a"]})
+
+    queue = study_queue(bible_df, profile, NOW)
+    review_rows = queue.filter(pl.col("action") == "review")
+    if review_rows.height >= 2:
+        scores = review_rows["score"].to_list()
+        assert scores == sorted(scores)
+
+
+def test_study_queue_top_n_caps_total():
+    """top_n limits the total number of rows returned."""
+    profile = {}  # nothing known -> everything is a "learn" candidate
+    bible_df = pl.DataFrame({"verse": ["cat dog bird fish"], "ref": ["a"]})
+
+    queue = study_queue(bible_df, profile, NOW, top_n=2)
+    assert queue.height <= 2
+
+
+def test_study_queue_empty_when_nothing_to_do():
+    """Seed-only profile with complete verse coverage produces an empty queue."""
+    profile = {s: WordHistory() for s in stem_tokens("the cat sat")}
+    bible_df = pl.DataFrame({"verse": ["the cat sat"], "ref": ["a"]})
+    # Seed words have p=1.0 (no reviews, so last_seen=None -> p=1.0), no due reviews.
+    # All verse stems are in the profile, so next_words_to_learn returns nothing.
+    queue = study_queue(bible_df, profile, NOW, known_rate=0.95)
+    assert queue.height == 0
+
+
+def test_study_queue_seed_words_not_in_due_reviews():
+    """Seed words (no review history) are not flagged as due for review."""
+    profile = {s: WordHistory() for s in stem_tokens("faith grace")}
+    bible_df = pl.DataFrame({"verse": ["faith grace"], "ref": ["a"]})
+
+    queue = study_queue(bible_df, profile, NOW)
+    assert queue.filter(pl.col("action") == "review").height == 0
+
+
+# --------------------------------------------------------------------------- #
+# Phase 5.3: lexical effort (verse_effort)
+# --------------------------------------------------------------------------- #
+
+def test_verse_effort_zero_for_all_known():
+    """A verse where every stem is in the seed profile has zero effort."""
+    profile = {s: WordHistory() for s in stem_tokens("the cat sat")}
+    effort = verse_effort("the cat sat", profile, NOW, decay=False)
+    assert effort == 0.0
+
+
+def test_verse_effort_nonzero_for_unknown():
+    """Effort is positive when some verse words are unknown."""
+    profile = {s: WordHistory() for s in stem_tokens("the")}
+    effort = verse_effort("the cat sat", profile, NOW, decay=False)
+    assert effort > 0.0
+
+
+def test_verse_effort_increases_with_more_unknowns():
+    """More unknown words → higher effort (with fallback d=1)."""
+    profile = {s: WordHistory() for s in stem_tokens("the")}
+    effort_one_unknown = verse_effort("the cat", profile, NOW, decay=False)
+    effort_two_unknown = verse_effort("the cat sat", profile, NOW, decay=False)
+    assert effort_two_unknown > effort_one_unknown
+
+
+def test_verse_effort_decay_off_counts_unknown_words():
+    """With decay=False and wordfreq absent, effort = number of unknown word tokens."""
+    import parser as _parser
+    orig = _parser._WORDFREQ_AVAILABLE
+    _parser._WORDFREQ_AVAILABLE = False
+    _parser._wordfreq_warned = False
+    try:
+        profile = {s: WordHistory() for s in stem_tokens("the")}
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            effort = verse_effort("the cat sat", profile, NOW, decay=False)
+        # "cat" and "sat" are unknown; d=1 for each → effort = 2.0
+        assert effort == pytest.approx(2.0)
+    finally:
+        _parser._WORDFREQ_AVAILABLE = orig
+        _parser._wordfreq_warned = False
+
+
+@pytest.mark.lexical
+@pytest.mark.skipif(not _wordfreq_available, reason="[lexical] extra not installed")
+def test_verse_effort_common_word_has_lower_difficulty():
+    """A very common unknown word has lower effort than a rare one (requires wordfreq)."""
+    # "the" is one of the most common English words (high Zipf, low d)
+    # "seraphim" is rare (low Zipf, high d)
+    profile = {}  # nothing known
+    effort_common = verse_effort("the", profile, NOW, decay=False)
+    effort_rare = verse_effort("seraphim", profile, NOW, decay=False)
+    assert effort_rare > effort_common
+
+
+@pytest.mark.lexical
+@pytest.mark.skipif(not _wordfreq_available, reason="[lexical] extra not installed")
+def test_verse_effort_same_rate_different_difficulty():
+    """Two verses at the same comprehension rate are ranked by word difficulty."""
+    # "the dog" and "a seraphim": both 0/2 known
+    profile = {}
+    effort_easy = verse_effort("the dog", profile, NOW, decay=False)
+    effort_hard = verse_effort("a seraphim", profile, NOW, decay=False)
+    # "seraphim" is much rarer than "dog", so the hard verse has higher effort
+    assert effort_hard > effort_easy
+
+
+# --------------------------------------------------------------------------- #
+# Phase 5.4: semantic similarity fallback (SemanticModel / load_semantic_model)
+# --------------------------------------------------------------------------- #
+
+def test_weighted_rate_unchanged_when_semantic_model_none():
+    """semantic_model=None (default) leaves weighted_comprehension_rate unchanged."""
+    vocab_text = "the cat sat on"
+    profile = {s: WordHistory() for s in stem_tokens(vocab_text)}
+    vocab = set(stem_tokens(vocab_text))
+    for verse in ["the cat sat", "the dog ran on", "sat quietly"]:
+        assert weighted_comprehension_rate(
+            verse, profile, NOW, decay=False, semantic_model=None
+        ) == comprehension_rate(verse, vocab)
+
+
+def test_load_semantic_model_returns_none_when_spacy_absent(tmp_path):
+    """load_semantic_model gracefully returns None when spaCy is not available."""
+    import parser as _parser
+    orig = _parser._SPACY_AVAILABLE
+    _parser._SPACY_AVAILABLE = False
+    _parser._semantic_warned = False
+    try:
+        p = tmp_path / "vocab.txt"
+        p.write_text("happy\n")
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            model = load_semantic_model(str(p))
+        assert model is None
+    finally:
+        _parser._SPACY_AVAILABLE = orig
+        _parser._semantic_warned = False
+
+
+def test_weighted_rate_no_credit_when_semantic_model_none():
+    """An unknown word gets p=0 when no semantic model is provided."""
+    profile = {s: WordHistory() for s in stem_tokens("the")}
+    rate = weighted_comprehension_rate("the joyful", profile, NOW, decay=False, semantic_model=None)
+    # "the" known (p=1), "joyful" unknown (p=0) -> 0.5
+    assert rate == pytest.approx(0.5)
+
+
+@pytest.mark.semantic
+@pytest.mark.skipif(not _spacy_available, reason="[semantic] extra not installed")
+def test_semantic_model_credit_for_similar_word(tmp_path):
+    """A word semantically similar to a known vocab word gets nonzero credit."""
+    import spacy
+    try:
+        nlp = spacy.load("en_core_web_md")
+    except OSError:
+        pytest.skip("en_core_web_md not installed")
+    model = SemanticModel(nlp, ["happy"])
+    # "joyful" is similar to "happy"
+    assert model.credit("joyful") > 0.0
+
+
+@pytest.mark.semantic
+@pytest.mark.skipif(not _spacy_available, reason="[semantic] extra not installed")
+def test_semantic_model_credit_caps_at_sim_weight(tmp_path):
+    """Semantic credit never exceeds SIM_WEIGHT."""
+    import spacy
+    from parser import _SIM_WEIGHT
+    try:
+        nlp = spacy.load("en_core_web_md")
+    except OSError:
+        pytest.skip("en_core_web_md not installed")
+    model = SemanticModel(nlp, ["happy", "joyful", "glad"])
+    assert model.credit("joyful") <= _SIM_WEIGHT
+
+
+@pytest.mark.semantic
+@pytest.mark.skipif(not _spacy_available, reason="[semantic] extra not installed")
+def test_semantic_credit_raises_comprehension_rate(tmp_path):
+    """weighted_comprehension_rate is higher with a semantic model than without."""
+    import spacy
+    try:
+        nlp = spacy.load("en_core_web_md")
+    except OSError:
+        pytest.skip("en_core_web_md not installed")
+    # Profile knows "happy"; verse contains "joyful" (semantically similar but stem-unknown)
+    profile = {s: WordHistory() for s in stem_tokens("happy")}
+    model = SemanticModel(nlp, ["happy"])
+    rate_without = weighted_comprehension_rate("joyful", profile, NOW, decay=False, semantic_model=None)
+    rate_with = weighted_comprehension_rate("joyful", profile, NOW, decay=False, semantic_model=model)
+    assert rate_with > rate_without
