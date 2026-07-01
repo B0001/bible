@@ -164,6 +164,10 @@ Refines items 14–15 with approaches from the vocabulary-acquisition / CALL
 Not started; sequence after Phase 4 since each item below depends on persisted
 per-user vocab state (item 15).
 
+**A concrete implementation blueprint for items 16–19 — data-model schemas,
+formulas, function signatures, packaging, sequencing, and the design decisions
+that resolve the ambiguity below — lives in [`PHASE5_DESIGN.md`](PHASE5_DESIGN.md).**
+
 16. **Per-word mastery model instead of a static known/unknown vocab file.**
     Replace the binary `my_vocab.txt` set with a per-word mastery probability
     learned from review history (knowledge-tracing style: Bayesian Knowledge
