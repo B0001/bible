@@ -41,7 +41,13 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   different profiles/translations, nothing special needed to swap them.
   `--learn WORD [WORD ...]` calls `update_vocab_file()` to persist newly
   learned words into that profile (case-insensitive dedup, applies to the same
-  run too).
+  run too). **Phase 5 personalization** (see `PHASE5_DESIGN.md`): `--review WORD
+  correct|wrong` (`record_review()`) logs a review to `<vocab>.reviews.csv`, and
+  `--decay` grades by time-decayed recall probability
+  (`weighted_comprehension_rate()` over a half-life model:
+  `load_profile`/`recall_prob`/`half_life`) instead of the binary known set.
+  Both are opt-in; with `--decay` off and no reviews, scoring is byte-identical
+  to the binary path. Review logs (`*.reviews.csv`) are gitignored.
 - **`dash_app.py`** — Plotly Dash web front end. Loads the graded CSV
   (`BIBLE_GRADED_CSV`, default `out/graded.csv`) and renders a sortable table
   filtered by a comprehension-rate RangeSlider and a reference/text search box

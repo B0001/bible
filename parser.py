@@ -27,10 +27,18 @@ many under-threshold verses learning each one (alone) would push to or above
 A ``--vocab`` path is just a vocab *profile* -- point it at different files for
 different translations/learners. ``--learn WORD [WORD ...]`` appends newly
 learned words to that profile file, persisting vocab growth across runs.
+
+Phase 5 personalization (see PHASE5_DESIGN.md): ``--review WORD correct|wrong``
+logs a review to the profile's ``<vocab>.reviews.csv``; ``--decay`` then scores
+verses by time-decayed recall probability (a half-life model over that log)
+instead of a binary known/unknown set. Both are opt-in and off by default.
 """
 import argparse
+import csv
 import os
 from collections import Counter
+from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import polars as pl
 from nltk.stem.snowball import SnowballStemmer
@@ -81,6 +89,124 @@ def update_vocab_file(path, new_words):
             for word in to_add:
                 f.write(word + "\n")
     return to_add
+
+
+# --------------------------------------------------------------------------- #
+# Phase 5 personalization: per-word review history and half-life recall model.
+# See PHASE5_DESIGN.md. Everything here is opt-in; with decay off and a
+# seed-only profile, weighted_comprehension_rate() reduces exactly to
+# comprehension_rate(), so existing behavior is unchanged.
+# --------------------------------------------------------------------------- #
+
+# Half-life model constants (days). Heuristic Leitner/SM-2-lite form.
+_H0 = 1.0        # base half-life for a brand-new word
+_GROWTH = 2.0    # half-life multiplier per net-correct review
+_H_MIN = 0.1     # clamp: ~2.4 hours
+_H_MAX = 365.0   # clamp: 1 year
+
+
+@dataclass
+class WordHistory:
+    """Replayed review state for one stem. ``last_seen`` is None for a seed word
+    that has never been reviewed."""
+
+    n_correct: int = 0
+    n_incorrect: int = 0
+    last_seen: datetime | None = None
+
+
+def _reviews_path(vocab_path):
+    """The review log co-located with a vocab profile: ``<vocab>.reviews.csv``."""
+    return os.path.expanduser(vocab_path) + ".reviews.csv"
+
+
+def _aware(ts):
+    """Coerce a datetime to UTC-aware (assume naive timestamps are UTC)."""
+    return ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts
+
+
+def record_review(vocab_path, word, correct, when=None):
+    """Append one review event for ``word`` to the profile's review log.
+
+    ``word`` is stemmed before storage. Creates the log (with header) on first
+    use. Returns the stem recorded, or None if ``word`` has no word tokens.
+    """
+    stems = stem_tokens(word)
+    if not stems:
+        return None
+    stem = stems[0]
+    when = _aware(when or datetime.now(timezone.utc))
+
+    path = _reviews_path(vocab_path)
+    out_dir = os.path.dirname(path)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+    new_file = not os.path.exists(path)
+    with open(path, "a", newline="") as f:
+        writer = csv.writer(f)
+        if new_file:
+            writer.writerow(["stem", "timestamp", "correct"])
+        writer.writerow([stem, when.isoformat(), int(bool(correct))])
+    return stem
+
+
+def load_profile(vocab_path):
+    """Load a profile: seed vocab (all stems) plus replayed review history.
+
+    Returns ``dict[stem -> WordHistory]``. Seed words with no reviews get
+    ``WordHistory(0, 0, None)``; words seen only in the review log are included
+    too. The review log is ``<vocab>.reviews.csv`` (may be absent).
+    """
+    profile = {stem: WordHistory() for stem in load_vocab(vocab_path)}
+    path = _reviews_path(vocab_path)
+    if os.path.exists(path):
+        with open(path, newline="") as f:
+            for row in csv.DictReader(f):
+                stem = row["stem"]
+                ts = _aware(datetime.fromisoformat(row["timestamp"]))
+                hist = profile.setdefault(stem, WordHistory())
+                if int(row["correct"]):
+                    hist.n_correct += 1
+                else:
+                    hist.n_incorrect += 1
+                if hist.last_seen is None or ts > hist.last_seen:
+                    hist.last_seen = ts
+    return profile
+
+
+def half_life(hist):
+    """Estimated recall half-life (days) from review history, clamped."""
+    h = _H0 * _GROWTH ** (hist.n_correct - hist.n_incorrect)
+    return max(_H_MIN, min(_H_MAX, h))
+
+
+def recall_prob(hist, now, decay=True):
+    """Probability the learner still recalls a stem at time ``now``.
+
+    ``hist is None`` (stem not in profile) -> 0.0. With ``decay`` off, any
+    in-profile stem is 1.0 (the classic binary "known" set). With decay on, a
+    seed word never reviewed is treated as freshly known (1.0); a reviewed word
+    decays as ``2 ** (-elapsed_days / half_life)``.
+    """
+    if hist is None:
+        return 0.0
+    if not decay or hist.last_seen is None:
+        return 1.0
+    elapsed_days = (_aware(now) - hist.last_seen).total_seconds() / 86400.0
+    return 2.0 ** (-elapsed_days / half_life(hist))
+
+
+def weighted_comprehension_rate(verse, profile, now, decay=True, min_verse_length=1):
+    """Comprehension rate as the mean recall probability over a verse's stems.
+
+    Generalizes ``comprehension_rate``: with ``decay=False`` and a seed-only
+    profile this returns the identical value (known stems contribute 1.0,
+    unknown 0.0), so it is a drop-in that adds forgetting when decay is on.
+    """
+    stems = stem_tokens(verse)
+    if not stems or len(stems) < min_verse_length:
+        return 0.0
+    return sum(recall_prob(profile.get(s), now, decay) for s in stems) / len(stems)
 
 
 def load_bible(path):
@@ -236,22 +362,56 @@ def main():
         metavar="WORD",
         help="add WORD(s) to the --vocab file, persisting them for this and future runs",
     )
+    parser.add_argument(
+        "--review",
+        nargs=2,
+        metavar=("WORD", "OUTCOME"),
+        help="record a review of WORD (OUTCOME: correct|wrong) in the profile's log",
+    )
+    parser.add_argument(
+        "--decay",
+        action="store_true",
+        help="score with time-decayed recall (half-life model) from the review log "
+        "instead of a binary known/unknown set",
+    )
     args = parser.parse_args()
     if args.passage_window > 1 and not args.passage_out:
         parser.error("--passage-out is required when --passage-window > 1")
     if args.next_words > 0 and not args.next_words_out:
         parser.error("--next-words-out is required when --next-words > 0")
+    if args.review and args.review[1] not in ("correct", "wrong"):
+        parser.error("--review OUTCOME must be 'correct' or 'wrong'")
 
     if args.learn:
         added = update_vocab_file(args.vocab, args.learn)
         if added:
             print(f"Learned {len(added)} new word(s) -> {args.vocab}: {', '.join(added)}")
 
+    if args.review:
+        word, outcome = args.review
+        stem = record_review(args.vocab, word, outcome == "correct")
+        if stem:
+            print(f"Recorded review of '{word}' ({outcome}) -> stem '{stem}'")
+
     vocab_stems = load_vocab(args.vocab)
     bible_df = load_bible(args.bible)
-    graded = grade(bible_df, vocab_stems, args.min_verse_length).select(
-        "ref", "verse", "comprehension_rate"
-    )
+    if args.decay:
+        now = datetime.now(timezone.utc)
+        profile = load_profile(args.vocab)
+        graded = bible_df.with_columns(
+            pl.col("verse")
+            .map_elements(
+                lambda v: weighted_comprehension_rate(
+                    v, profile, now, decay=True, min_verse_length=args.min_verse_length
+                ),
+                return_dtype=pl.Float64,
+            )
+            .alias("comprehension_rate")
+        ).select("ref", "verse", "comprehension_rate")
+    else:
+        graded = grade(bible_df, vocab_stems, args.min_verse_length).select(
+            "ref", "verse", "comprehension_rate"
+        )
 
     out_dir = os.path.dirname(os.path.expanduser(args.out))
     if out_dir:
