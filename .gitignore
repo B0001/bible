@@ -109,3 +109,6 @@ data/
 # pipeline output
 out/
 graded.csv
+
+# per-profile review logs (Phase 5)
+*.reviews.csv
