@@ -256,6 +256,32 @@ and UI (P8.4), ✅ one-pass grading — 23k WLC verses in ~0.8s, CSV byte-identi
 (P8.5), ✅ RTL rendering for Hebrew driven by `bibles.toml` lang (P8.6),
 ✅ docs/Docker catch-up (P8.7), ✅ `test_dash_app.py` — 81 tests total (P8.8).
 
+## Phase 9 — Static client-side reader ("viral-proof")
+
+Full design in [`PHASE9_DESIGN.md`](PHASE9_DESIGN.md). If traffic spikes, the
+answer is less backend, not more: a static site on GitHub Pages that scores
+verses **in the browser** against a vocab pasted into a textarea, with read
+tracking in localStorage (plus JSON export/import for backup). Pre-tokenized
+per-Bible JSON is produced by `scripts/export_static.py` reusing
+`tokenize_and_stem`, so browser scores match the pipeline exactly. Zero
+servers, ~$0/month, and it makes per-user state private by construction —
+sidestepping the multi-user/auth blocker (§5). The Dash app stays as the local
+power tool for the Phase 5 SRS stack. Includes a stopgap (P9.0): cap the Dash
+table callback at 500 rows — today a wide filter ships ~6 MB of JSON per
+request.
+
+## Phase 9.5 — All languages
+
+`--lang` accepts any ISO 639-1 code: the 15 NLTK Snowball languages (ar, da,
+de, en, es, fi, fr, hu, it, nl, no, pt, ro, ru, sv) get stem-aware matching;
+he/el keep their mark-stripping paths; Arabic additionally strips harakat and
+renders RTL; anything else falls back to exact lowercased word forms (zh/ja/th
+word segmentation is out of scope). `scripts/convert_getbible.py` fetches any
+of ~117 translations in 63 languages from getbible.net (`--list` to browse).
+Twelve Bibles are pre-configured in `bibles.toml`; the static site's manifest
+carries per-language stopword lists and vendored Snowball JS stemmers so
+browser stemming matches the pipeline.
+
 ## 5. Out of scope (for now)
 - Authentication / multi-user accounts.
 - Cloud cost optimization of the build images (the Dockerfile size experiments).

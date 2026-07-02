@@ -34,10 +34,16 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 GRADED_CSV = os.environ.get("BIBLE_GRADED_CSV", "out/graded.csv")
 READS_DB = os.environ.get("READS_DB", "reads.db")
 KNOWN_RATE = 0.95
+# Cap rows sent per callback: page_size only paginates client-side, so without
+# this a wide filter ships the entire corpus (~6 MB JSON for NASB) per request.
+MAX_TABLE_ROWS = 500
 
-# Strips Hebrew nikudim/cantillation (U+0591–U+05C7) and Greek combining diacritics
-# (U+0300–U+036F, after NFD decomposition) so searching "שלום" matches "שָׁלוֹם".
-_MARK_RE = re.compile(r"[֑-ׇ̀-ͯ]")
+# Strips Hebrew nikudim/cantillation (U+0591–U+05C7), Greek combining diacritics
+# (U+0300–U+036F, after NFD decomposition), and Arabic harakat/tatweel
+# (U+064B–U+0652, U+0670, U+0640) so searching "שלום" matches "שָׁלוֹם".
+_MARK_RE = re.compile(r"[֑-ׇ̀-ًͯ-ْٰـ]")
+
+RTL_LANGS = {"he", "ar"}
 
 
 def _strip_marks(text):
@@ -313,13 +319,13 @@ app.layout = html.Div(
 # ---------------------------------------------------------------------------
 
 def _cell_styles(lang):
-    """Column styles; Hebrew verses render right-to-left."""
+    """Column styles; RTL scripts (Hebrew, Arabic) render right-to-left."""
     styles = [
         {"if": {"column_id": "verse"}, "width": "60%"},
         {"if": {"column_id": "comprehension_%"}, "textAlign": "right"},
         {"if": {"column_id": "read"}, "textAlign": "center", "width": "5%"},
     ]
-    if lang == "he":
+    if lang in RTL_LANGS:
         styles[0] = {
             "if": {"column_id": "verse"},
             "width": "60%",
@@ -361,7 +367,14 @@ def update_table(bible_id, rate_range, search, unread_toggle, _reads_store):
     if unread_toggle and "unread" in unread_toggle and read_refs:
         filtered = filtered.filter(~pl.col("ref").is_in(list(read_refs)))
 
-    count = f"{filtered.height} of {df.height} verses match."
+    if filtered.height > MAX_TABLE_ROWS:
+        count = (
+            f"Showing first {MAX_TABLE_ROWS} of {filtered.height} matches "
+            f"({df.height} verses total) — narrow the filter to see the rest."
+        )
+        filtered = filtered.head(MAX_TABLE_ROWS)
+    else:
+        count = f"{filtered.height} of {df.height} verses match."
 
     # Progress: verses at >=95% comprehension that have been read
     threshold_df = df.filter(pl.col("comprehension_rate") >= KNOWN_RATE)
@@ -448,7 +461,7 @@ def find_passage(n_clicks, bible_id):
     )
 
     pre_style = {"whiteSpace": "pre-wrap", "margin": 0}
-    if BIBLES[bible_id]["lang"] == "he":
+    if BIBLES[bible_id]["lang"] in RTL_LANGS:
         pre_style.update({"direction": "rtl", "textAlign": "right"})
 
     children = [

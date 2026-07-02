@@ -81,6 +81,25 @@ Hebrew vocab files can be written with or without nikudim — both are normalize
 to bare consonants. In the UI, search is nikudim-insensitive (type `שלום`, match
 `שָׁלוֹם`) and Hebrew verses render right-to-left.
 
+## Any other language
+
+`scripts/convert_getbible.py` fetches any of ~117 translations in 63 languages
+from getbible.net, and `--lang` accepts any ISO 639-1 code. Stem-aware matching
+covers the 15 Snowball languages (ar, da, de, en, es, fi, fr, hu, it, nl, no,
+pt, ro, ru, sv); Hebrew/Greek strip marks; anything else matches on exact
+lowercased word forms:
+
+```bash
+python scripts/convert_getbible.py --list                  # browse translations
+python scripts/convert_getbible.py --translation valera    # Spanish Reina Valera
+python parser.py --bible data/valera.txt --vocab my_spanish_words.txt \
+    --out out/valera_graded.csv --lang es
+```
+
+Twelve Bibles ship pre-configured in `bibles.toml`: English, Biblical Hebrew,
+Koine Greek, Modern Hebrew, Spanish, German, French, Russian, Portuguese,
+Italian, Dutch, and Arabic (harakat-insensitive, RTL).
+
 ## Learner analytics
 
 `parser.py` surfaces several learning aids alongside per-verse grading:

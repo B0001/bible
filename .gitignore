@@ -97,9 +97,6 @@ venv.bak/
 # Rope project settings
 .ropeproject
 
-# mkdocs documentation
-/site
-
 # mypy
 .mypy_cache/
 config/
@@ -115,3 +112,6 @@ graded.csv
 
 # read-tracking user state (Phase 7)
 reads.db
+
+# generated static-site data (built by scripts/export_static.py)
+site/data/

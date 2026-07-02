@@ -87,6 +87,39 @@ def test_comprehension_rate_greek():
     assert comprehension_rate("ἐν", vocab, lang="el") == 1.0
 
 
+def test_tokenize_and_stem_spanish():
+    """Spanish gets Snowball stemming: inflections share a stem."""
+    corriendo = tokenize_and_stem("corriendo", "es")
+    correr = tokenize_and_stem("correr", "es")
+    assert corriendo == correr  # both stem to "corr"
+
+
+def test_tokenize_and_stem_russian():
+    """Cyrillic tokenizes via \\w+ and stems with the Russian Snowball."""
+    from nltk.stem.snowball import SnowballStemmer
+    expected = SnowballStemmer("russian").stem("бежит")
+    assert tokenize_and_stem("бежит", "ru") == [expected]
+
+
+def test_tokenize_arabic_strips_harakat():
+    """Arabic harakat are stripped so pointed and unpointed text match."""
+    # السَّلَامُ (with harakat) vs السلام (bare)
+    pointed = tokenize("السَّلَامُ", "ar")
+    bare = tokenize("السلام", "ar")
+    assert pointed == bare
+
+
+def test_tokenize_unknown_lang_falls_back_to_plain_tokens():
+    """A language without a Snowball stemmer gets lowercased \\w+ tokens, unstemmed."""
+    assert tokenize_and_stem("Ũrĩa Ngai", "ki") == ["ũrĩa", "ngai"]
+
+
+def test_comprehension_rate_spanish_stem_variant():
+    """Spanish vocab word credits its inflections, mirroring English behavior."""
+    vocab = set(tokenize_and_stem("correr", "es"))
+    assert comprehension_rate("corriendo", vocab, lang="es") == 1.0
+
+
 def test_english_default_lang_unchanged():
     # Existing English behavior is unaffected by the lang parameter default
     vocab = set(stem_tokens("the cat sat"))

@@ -50,3 +50,43 @@ jobs:
         run: python -m spacy download en_core_web_md
       - name: Test semantic
         run: pytest -m semantic
+
+  # Builds the static reader (site/) and deploys to GitHub Pages on master.
+  # Converter/network failures fail this job only — test jobs are independent.
+  deploy-pages:
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e .
+      - name: Download NLTK data
+        run: python -m nltk.downloader stopwords
+      - name: Fetch Bible texts
+        run: |
+          mkdir -p data
+          curl -sf https://raw.githubusercontent.com/tushortz/variety-bible-text/master/bibles/nasb.txt -o data/nasb.txt
+          python scripts/convert_wlc.py
+          python scripts/convert_gnt.py
+          python scripts/convert_delitzsch_nt.py
+          for t in valera luther1545 ls1910 synodal almeida riveduta statenvertaling arabicsv; do
+            python scripts/convert_getbible.py --translation "$t"
+          done
+      - name: Export static site data
+        run: python scripts/export_static.py
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
