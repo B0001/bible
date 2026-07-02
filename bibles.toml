@@ -3,21 +3,83 @@ id = "nasb"
 name = "NASB (English)"
 lang = "en"
 graded_csv = "out/nasb_graded.csv"
+source = "data/nasb.txt"
 
 [[bibles]]
 id = "wlc"
 name = "Biblical Hebrew OT (WLC)"
 lang = "he"
 graded_csv = "out/wlc_graded.csv"
+source = "data/wlc.txt"
 
 [[bibles]]
 id = "gnt"
 name = "Biblical Greek NT (Byzantine)"
 lang = "el"
 graded_csv = "out/gnt_graded.csv"
+source = "data/gnt.txt"
 
 [[bibles]]
 id = "modern-he-nt"
 name = "Modern Hebrew NT (Delitzsch)"
 lang = "he"
 graded_csv = "out/modern_he_nt_graded.csv"
+source = "data/modern_he_nt.txt"
+
+# The entries below are fetched via: python scripts/convert_getbible.py --translation <id>
+
+[[bibles]]
+id = "valera"
+name = "Reina Valera (Spanish)"
+lang = "es"
+graded_csv = "out/valera_graded.csv"
+source = "data/valera.txt"
+
+[[bibles]]
+id = "luther1545"
+name = "Luther 1545 (German)"
+lang = "de"
+graded_csv = "out/luther1545_graded.csv"
+source = "data/luther1545.txt"
+
+[[bibles]]
+id = "ls1910"
+name = "Louis Segond 1910 (French)"
+lang = "fr"
+graded_csv = "out/ls1910_graded.csv"
+source = "data/ls1910.txt"
+
+[[bibles]]
+id = "synodal"
+name = "Synodal (Russian)"
+lang = "ru"
+graded_csv = "out/synodal_graded.csv"
+source = "data/synodal.txt"
+
+[[bibles]]
+id = "almeida"
+name = "Almeida (Portuguese)"
+lang = "pt"
+graded_csv = "out/almeida_graded.csv"
+source = "data/almeida.txt"
+
+[[bibles]]
+id = "riveduta"
+name = "Riveduta (Italian)"
+lang = "it"
+graded_csv = "out/riveduta_graded.csv"
+source = "data/riveduta.txt"
+
+[[bibles]]
+id = "statenvertaling"
+name = "Statenvertaling (Dutch)"
+lang = "nl"
+graded_csv = "out/statenvertaling_graded.csv"
+source = "data/statenvertaling.txt"
+
+[[bibles]]
+id = "arabicsv"
+name = "Smith & Van Dyke (Arabic)"
+lang = "ar"
+graded_csv = "out/arabicsv_graded.csv"
+source = "data/arabicsv.txt"

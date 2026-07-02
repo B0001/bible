@@ -66,6 +66,33 @@ except ImportError:
 TOKENIZER = RegexpTokenizer(r"\w+")
 STEMMER = SnowballStemmer("english", ignore_stopwords=True)
 
+# ISO 639-1 code → NLTK Snowball stemmer name. Any of these languages gets
+# stem-aware matching; he/el have dedicated mark-stripping paths below; any
+# other code falls back to plain lowercased \w+ tokens with no stemmer.
+SNOWBALL_LANGS = {
+    "ar": "arabic", "da": "danish", "de": "german", "en": "english",
+    "es": "spanish", "fi": "finnish", "fr": "french", "hu": "hungarian",
+    "it": "italian", "nl": "dutch", "no": "norwegian", "pt": "portuguese",
+    "ro": "romanian", "ru": "russian", "sv": "swedish",
+}
+
+_STEMMERS = {"en": STEMMER}
+
+
+def _stemmer_for(lang):
+    """Cached SnowballStemmer for ``lang``, or None if Snowball doesn't cover it."""
+    if lang not in _STEMMERS:
+        name = SNOWBALL_LANGS.get(lang)
+        if name is None:
+            _STEMMERS[lang] = None
+        else:
+            try:
+                _STEMMERS[lang] = SnowballStemmer(name, ignore_stopwords=True)
+            except Exception:  # no NLTK stopword list for this language
+                _STEMMERS[lang] = SnowballStemmer(name)
+    return _STEMMERS[lang]
+
+
 # Hebrew: strip niqqud/cantillation (U+0591–U+05C7), then extract consonants (U+05D0–U+05EA).
 _HE_STRIP = re.compile(r"[֑-ׇ]")
 _HE_TOKEN = re.compile(r"[א-ת]+")
@@ -74,34 +101,43 @@ _HE_TOKEN = re.compile(r"[א-ת]+")
 _EL_DIACRITIC = re.compile(r"[̀-ͯ]")
 _EL_TOKEN = re.compile(r"[α-ω]+")
 
+# Arabic: strip harakat (U+064B–U+0652), superscript alef (U+0670), tatweel (U+0640).
+_AR_STRIP = re.compile(r"[ً-ْٰـ]")
+
 
 def tokenize(text, lang="en"):
     """Return a list of lowercased word tokens for the given language script.
 
-    English: NLTK RegexpTokenizer (``\\w+``).
     Hebrew (``he``): strip niqqud/cantillation, extract consonant runs.
     Greek (``el``): NFD-normalize, strip combining diacritics, extract letter runs.
-    No stemming is applied here; see ``tokenize_and_stem``.
+    Arabic (``ar``): strip harakat/tatweel, then ``\\w+`` tokens.
+    Everything else: NLTK RegexpTokenizer (``\\w+``) on lowercased text — this
+    covers all Latin- and Cyrillic-script languages. (No word segmentation:
+    zh/ja/th are not supported.) No stemming here; see ``tokenize_and_stem``.
     """
     if lang == "he":
         return _HE_TOKEN.findall(_HE_STRIP.sub("", text))
     if lang == "el":
         normalized = unicodedata.normalize("NFD", text)
         return _EL_TOKEN.findall(_EL_DIACRITIC.sub("", normalized).lower())
+    if lang == "ar":
+        return TOKENIZER.tokenize(_AR_STRIP.sub("", text).lower())
     return TOKENIZER.tokenize(text.lower())
 
 
 def tokenize_and_stem(text, lang="en"):
     """Tokenize text and apply stemming where the language supports it.
 
-    English: Snowball-stems each token (so "running" and "run" share a stem).
-    Hebrew/Greek: no stemmer available; returns bare tokens. Consonantal Hebrew
-    already conflates most morphological variants; Greek lemmatization is out of
-    scope until P7.5.
+    Languages in ``SNOWBALL_LANGS`` are Snowball-stemmed (so "running" and
+    "run" share a stem — likewise "corriendo"/"correr" in Spanish, etc.).
+    Hebrew/Greek and any language without a Snowball stemmer return bare
+    tokens: consonantal Hebrew already conflates most variants; others match
+    on exact (lowercased, mark-stripped) forms.
     """
     tokens = tokenize(text, lang)
-    if lang == "en":
-        return [STEMMER.stem(tok) for tok in tokens]
+    stemmer = _stemmer_for(lang)
+    if stemmer is not None:
+        return [stemmer.stem(tok) for tok in tokens]
     return tokens
 
 
@@ -305,7 +341,10 @@ def _word_difficulty(surface_word, lang="en"):
             )
             _wordfreq_warned = True
         return 1.0
-    zipf = _zipf_frequency(surface_word.lower(), lang)
+    try:
+        zipf = _zipf_frequency(surface_word.lower(), lang)
+    except LookupError:  # wordfreq has no wordlist for this language
+        return 1.0
     return max(0.0, min(1.0, 1.0 - zipf / 8.0))
 
 
@@ -685,8 +724,9 @@ def main():
     parser.add_argument(
         "--lang",
         default="en",
-        choices=["en", "he", "el"],
-        help="script/language of the Bible text: en (English, default), he (Hebrew), el (Greek)",
+        help="ISO 639-1 language of the Bible text (default en). Stem-aware for "
+        f"{', '.join(sorted(SNOWBALL_LANGS))}; he/el get mark-stripping; any other "
+        "code falls back to plain lowercased word tokens.",
     )
     parser.add_argument(
         "--known-rate",

@@ -19,6 +19,7 @@ os.environ["BIBLE_GRADED_CSV"] = _csv
 os.environ["READS_DB"] = os.path.join(_tmp, "reads.db")
 
 from dash_app import (  # noqa: E402
+    MAX_TABLE_ROWS,
     _cell_styles,
     _mark_read,
     _mark_unread,
@@ -26,6 +27,7 @@ from dash_app import (  # noqa: E402
     get_read_refs,
     has_count_cols,
     to_records,
+    update_table,
 )
 
 
@@ -108,6 +110,17 @@ def test_has_count_cols():
     without = with_counts.drop("known_count", "total_count")
     assert has_count_cols(with_counts)
     assert not has_count_cols(without)
+
+
+def test_update_table_caps_payload():
+    """A wide-open filter never ships more than MAX_TABLE_ROWS rows."""
+    import dash_app as _da
+    bible_id = next(iter(_da.BIBLES))
+    records, count, _progress, _styles = update_table(bible_id, [0, 100], "", [], 0)
+    assert len(records) <= MAX_TABLE_ROWS
+    total = _da.BIBLES[bible_id]["df"].height
+    if total > MAX_TABLE_ROWS:
+        assert f"first {MAX_TABLE_ROWS}" in count
 
 
 def test_cell_styles_rtl_for_hebrew():
