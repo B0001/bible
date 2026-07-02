@@ -1,0 +1,391 @@
+// Static Bible reader — scores verses by comprehension against the user's vocab.
+// Vanilla JS ES module; per-language Snowball stemmers are dynamically imported
+// from site/vendor/ as listed in the manifest's `stemmers` map.
+
+// ---------------------------------------------------------------- state
+
+const PAGE_SIZE = 20;
+const PASSAGE_RATE = 0.95;
+
+let manifest = null;          // manifest.json content
+let bible = null;             // current bible: {id, name, lang, refs, verses, tokens}
+let searchText = [];          // per-verse mark-stripped lowercase "ref text" for search
+let known = [];               // per-verse known-token counts
+let total = [];               // per-verse total-token counts
+let rates = [];               // per-verse comprehension rates
+let order = [];               // verse indices sorted by rate desc
+let filtered = [];            // indices after filters, in `order` order
+let reads = new Set();        // read refs for current bible
+let page = 0;
+
+// localStorage helpers — can throw in private mode, so wrap everything.
+function loadJSON(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw === null ? fallback : JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+function saveJSON(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* ignore (private mode / quota) */
+  }
+}
+
+// ---------------------------------------------------------------- tokenizers
+
+// Per-language stemmer instances (null = no stemmer for that language),
+// dynamically imported on first use from the manifest's `stemmers` map.
+const stemmerCache = new Map();
+let currentStemmer = null;   // stemmer for the loaded bible's language
+let currentStops = new Set(); // that language's NLTK stopword set
+let rtlLangs = new Set(['he']);
+
+async function stemmerFor(lang) {
+  if (stemmerCache.has(lang)) return stemmerCache.get(lang);
+  const path = (manifest.stemmers || {})[lang] || null;
+  let instance = null;
+  if (path) {
+    try {
+      const mod = await import('./' + path);
+      instance = new mod.default();
+    } catch (e) {
+      showError(`Stemmer for "${lang}" failed to load (${e.message}); ` +
+        'matching exact word forms only.');
+    }
+  }
+  stemmerCache.set(lang, instance);
+  return instance;
+}
+
+function stopsFor(lang) {
+  return new Set((manifest.stopwords || {})[lang] || []);
+}
+
+// Stem one lowercased word with the current language's stemmer, keeping
+// stopwords verbatim (NLTK SnowballStemmer(ignore_stopwords=True) behavior).
+function normalizeWord(word) {
+  if (currentStops.has(word)) return word;
+  return currentStemmer ? currentStemmer.stem(word) : word;
+}
+
+// Normalize the whole vocab textarea into a Set of forms matching the
+// pipeline's pre-normalized verse tokens. NB: JS \w is ASCII-only, so the
+// generic path uses \p{L}\p{N}_ to mirror Python's Unicode-aware \w.
+function tokenizeVocab(text, lang) {
+  const set = new Set();
+  if (lang === 'he') {
+    const stripped = text.replace(/[֑-ׇ]/g, '');
+    for (const m of stripped.match(/[א-ת]+/g) || []) set.add(m);
+  } else if (lang === 'el') {
+    const stripped = text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    for (const m of stripped.match(/[α-ω]+/g) || []) set.add(m);
+  } else {
+    let t = text;
+    if (lang === 'ar') t = t.replace(/[ً-ْٰـ]/g, ''); // harakat + tatweel
+    for (const m of t.toLowerCase().match(/[\p{L}\p{N}_]+/gu) || [])
+      set.add(normalizeWord(m));
+  }
+  return set;
+}
+
+// Strip Hebrew marks, combining diacritics, and Arabic harakat/tatweel,
+// lowercase — for mark-insensitive search (same class as the Python side).
+function stripMarks(s) {
+  return s.normalize('NFD').replace(/[֑-ׇ̀-ًͯ-ْٰـ]/g, '').toLowerCase();
+}
+
+// ---------------------------------------------------------------- scoring
+
+function score() {
+  const vocab = tokenizeVocab(el.vocab.value, bible.lang);
+  const n = bible.tokens.length;
+  known = new Array(n);
+  total = new Array(n);
+  rates = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const toks = bible.tokens[i];
+    let k = 0;
+    for (const t of toks) if (vocab.has(t)) k++;
+    known[i] = k;
+    total[i] = toks.length;
+    rates[i] = toks.length ? k / toks.length : 0;
+  }
+  order = Array.from({ length: n }, (_, i) => i).sort((a, b) => rates[b] - rates[a]);
+}
+
+// Longest contiguous run of verses whose aggregate comprehension >= minRate.
+// 1:1 port of parser.py longest_span (prefix sums + monotonic stack).
+function longestSpan(knownArr, totalArr, minRate) {
+  const n = knownArr.length;
+  const P = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) P[i + 1] = P[i] + knownArr[i] - minRate * totalArr[i];
+  const stack = [];
+  for (let i = 0; i <= n; i++)
+    if (!stack.length || P[i] < P[stack[stack.length - 1]]) stack.push(i);
+  let bestLen = 0, bestI = 0, bestJ = 0;
+  for (let j = n; j >= 0 && stack.length; j--) {
+    while (stack.length && P[j] >= P[stack[stack.length - 1]]) {
+      const i = stack.pop();
+      if (j - i > bestLen) { bestLen = j - i; bestI = i; bestJ = j; }
+    }
+  }
+  return bestLen > 0 ? [bestI, bestJ] : null;
+}
+
+// ---------------------------------------------------------------- rendering
+
+const el = {};
+for (const id of ['bible-select', 'loading', 'vocab', 'vocab-label', 'rate-min',
+  'rate-max', 'search', 'unread-only', 'find-passage', 'export-data',
+  'import-data', 'import-file', 'progress', 'passage-panel', 'verse-body',
+  'prev-page', 'next-page', 'page-info', 'error']) {
+  el[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = document.getElementById(id);
+}
+
+function showError(msg) {
+  el.error.textContent = msg;
+  el.error.hidden = !msg;
+}
+
+function applyFilters() {
+  const loNum = parseFloat(el.rateMin.value);
+  const hiNum = parseFloat(el.rateMax.value);
+  const lo = (Number.isNaN(loNum) ? 0 : loNum) / 100;
+  const hi = (Number.isNaN(hiNum) ? 100 : hiNum) / 100;
+  const needle = stripMarks(el.search.value.trim());
+  const unreadOnly = el.unreadOnly.checked;
+  filtered = order.filter(i =>
+    rates[i] >= lo && rates[i] <= hi &&
+    (!needle || searchText[i].includes(needle)) &&
+    (!unreadOnly || !reads.has(bible.refs[i])));
+}
+
+function renderProgress() {
+  let sweet = 0, read = 0;
+  for (let i = 0; i < rates.length; i++) {
+    if (rates[i] >= PASSAGE_RATE) {
+      sweet++;
+      if (reads.has(bible.refs[i])) read++;
+    }
+  }
+  el.progress.textContent = `${read} of ${sweet} verses at ≥95% read`;
+}
+
+function renderTable() {
+  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  page = Math.min(Math.max(0, page), pages - 1);
+  const rtl = rtlLangs.has(bible.lang);
+  const body = el.verseBody;
+  body.textContent = '';
+  for (const i of filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)) {
+    const tr = document.createElement('tr');
+
+    const tdRef = document.createElement('td');
+    tdRef.textContent = bible.refs[i];
+
+    const tdVerse = document.createElement('td');
+    tdVerse.textContent = bible.verses[i];
+    tdVerse.className = 'verse';
+    if (rtl) { tdVerse.dir = 'rtl'; tdVerse.classList.add('rtl'); }
+
+    const tdRate = document.createElement('td');
+    tdRate.textContent = (rates[i] * 100).toFixed(1);
+    tdRate.className = 'rate';
+
+    const tdRead = document.createElement('td');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = reads.has(bible.refs[i]);
+    cb.addEventListener('change', () => {
+      if (cb.checked) reads.add(bible.refs[i]);
+      else reads.delete(bible.refs[i]);
+      saveJSON('reads:' + bible.id, [...reads]);
+      renderProgress();
+      if (el.unreadOnly.checked) refresh();
+    });
+    tdRead.appendChild(cb);
+    tdRead.className = 'read';
+
+    tr.append(tdRef, tdVerse, tdRate, tdRead);
+    body.appendChild(tr);
+  }
+  el.pageInfo.textContent = `page ${page + 1} of ${pages}`;
+  el.prevPage.disabled = page === 0;
+  el.nextPage.disabled = page >= pages - 1;
+}
+
+function refresh() {
+  applyFilters();
+  renderProgress();
+  renderTable();
+}
+
+function rescore() {
+  if (!bible) return;
+  score();
+  page = 0;
+  refresh();
+}
+
+function renderPassage() {
+  const panel = el.passagePanel;
+  panel.textContent = '';
+  panel.hidden = false;
+  const span = longestSpan(known, total, PASSAGE_RATE);
+  if (!span) {
+    panel.textContent = 'No passage at ≥95% found.';
+    return;
+  }
+  const [i, j] = span;
+  let k = 0, t = 0;
+  for (let v = i; v < j; v++) { k += known[v]; t += total[v]; }
+  const rate = t ? (100 * k / t).toFixed(1) : '0.0';
+  const head = document.createElement('p');
+  head.className = 'passage-head';
+  head.textContent = `Longest passage: ${bible.refs[i]} – ${bible.refs[j - 1]} (${j - i} verses, ${rate}% comprehension)`;
+  panel.appendChild(head);
+  const rtl = rtlLangs.has(bible.lang);
+  for (let v = i; v < j; v++) {
+    const line = document.createElement('p');
+    line.className = 'passage-line';
+    line.textContent = `${bible.refs[v]}  ${bible.verses[v]}`;
+    if (rtl) { line.dir = 'rtl'; line.classList.add('rtl'); }
+    panel.appendChild(line);
+  }
+}
+
+// ---------------------------------------------------------------- data loading
+
+function langName(code) {
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'language' }).of(code) || code;
+  } catch {
+    return code;
+  }
+}
+
+async function loadBible(id) {
+  const entry = manifest.bibles.find(b => b.id === id) || manifest.bibles[0];
+  el.loading.hidden = false;
+  showError('');
+  try {
+    const resp = await fetch(entry.file);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    bible = await resp.json();
+  } catch (e) {
+    showError(`Failed to load ${entry.name}: ${e.message}`);
+    el.loading.hidden = true;
+    return;
+  }
+  el.loading.hidden = true;
+  saveJSON('bible', bible.id);
+
+  // Language plumbing: stemmer + stopwords must be in place before scoring.
+  currentStemmer = await stemmerFor(bible.lang);
+  currentStops = stopsFor(bible.lang);
+
+  // Precompute mark-stripped search text once per bible load.
+  searchText = bible.refs.map((r, i) => stripMarks(r + ' ' + bible.verses[i]));
+  reads = new Set(loadJSON('reads:' + bible.id, []));
+  el.vocabLabel.textContent =
+    `Your vocabulary (${langName(bible.lang)} words, whitespace-separated)`;
+  el.vocab.value = loadJSON('vocab:' + bible.lang, '');
+  el.passagePanel.hidden = true;
+  rescore();
+}
+
+// ---------------------------------------------------------------- events
+
+function debounce(fn, ms) {
+  let t;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+
+el.bibleSelect.addEventListener('change', () => loadBible(el.bibleSelect.value));
+
+el.vocab.addEventListener('input', debounce(() => {
+  if (!bible) return;
+  saveJSON('vocab:' + bible.lang, el.vocab.value);
+  rescore();
+}, 300));
+
+for (const input of [el.rateMin, el.rateMax, el.search]) {
+  input.addEventListener('input', debounce(() => { page = 0; refresh(); }, 200));
+}
+el.unreadOnly.addEventListener('change', () => { page = 0; refresh(); });
+
+el.prevPage.addEventListener('click', () => { page--; renderTable(); });
+el.nextPage.addEventListener('click', () => { page++; renderTable(); });
+
+el.findPassage.addEventListener('click', () => { if (bible) renderPassage(); });
+
+el.exportData.addEventListener('click', () => {
+  const data = {};
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key === 'bible' || key.startsWith('vocab:') || key.startsWith('reads:'))
+        data[key] = localStorage.getItem(key);
+    }
+  } catch { /* ignore */ }
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'bible-reader-data.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+el.importData.addEventListener('click', () => el.importFile.click());
+el.importFile.addEventListener('change', async () => {
+  const file = el.importFile.files[0];
+  el.importFile.value = '';
+  if (!file) return;
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+  } catch {
+    showError('Import failed: not a valid JSON file.');
+    return;
+  }
+  try {
+    for (const [key, value] of Object.entries(data)) {
+      if (key === 'bible' || key.startsWith('vocab:') || key.startsWith('reads:'))
+        localStorage.setItem(key, String(value));
+    }
+  } catch { /* ignore */ }
+  showError('');
+  const id = loadJSON('bible', manifest.bibles[0].id);
+  el.bibleSelect.value = id;
+  loadBible(id);
+});
+
+// ---------------------------------------------------------------- init
+
+async function init() {
+  try {
+    const resp = await fetch('data/manifest.json');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    manifest = await resp.json();
+  } catch (e) {
+    showError(`Failed to load manifest: ${e.message}`);
+    return;
+  }
+  rtlLangs = new Set(manifest.rtl || ['he']);
+  for (const b of manifest.bibles) {
+    const opt = document.createElement('option');
+    opt.value = b.id;
+    opt.textContent = `${b.name} (${b.verses.toLocaleString()} verses)`;
+    el.bibleSelect.appendChild(opt);
+  }
+  const saved = loadJSON('bible', manifest.bibles[0].id);
+  const id = manifest.bibles.some(b => b.id === saved) ? saved : manifest.bibles[0].id;
+  el.bibleSelect.value = id;
+  await loadBible(id);
+}
+
+init();

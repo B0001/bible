@@ -91,9 +91,7 @@ def test_vendored_js_stemmer_matches_nltk(tmp_path):
         f"import EnglishStemmer from '{vendor}/english-stemmer.js';\n"
         "const s = new EnglishStemmer();\n"
         f"const words = {json.dumps(words)};\n"
-        "for (const w of words) {\n"
-        "  s.setCurrent(w); s.stem(); console.log(s.getCurrent());\n"
-        "}\n"
+        "for (const w of words) console.log(s.stem(w));\n"
     )
     out = subprocess.run(
         [_node, str(runner)], capture_output=True, text=True, check=True

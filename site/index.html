@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bible Reader — graded by your vocabulary</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Bible Reader — graded by your vocabulary</h1>
+    <p class="subtitle">Paste the words you know; every verse is scored by how much of it you can read. Aim for the ~95% sweet spot.</p>
+  </header>
+
+  <main>
+    <div id="error" class="error" hidden></div>
+
+    <section class="controls">
+      <label>Bible
+        <select id="bible-select"></select>
+        <span id="loading" hidden>Loading…</span>
+      </label>
+
+      <label for="vocab">
+        <span id="vocab-label">Your vocabulary (words, whitespace-separated)</span>
+      </label>
+      <textarea id="vocab" rows="6" placeholder="paste the words you know…"></textarea>
+
+      <div class="row">
+        <label>Comprehension min %
+          <input type="number" id="rate-min" min="0" max="100" value="90">
+        </label>
+        <label>max %
+          <input type="number" id="rate-max" min="0" max="100" value="100">
+        </label>
+        <label class="grow">Search
+          <input type="search" id="search" placeholder="reference or text…">
+        </label>
+        <label class="check">
+          <input type="checkbox" id="unread-only"> Unread only
+        </label>
+      </div>
+
+      <div class="row">
+        <button id="find-passage">Find longest passage</button>
+        <button id="export-data">Export data</button>
+        <button id="import-data">Import data</button>
+        <input type="file" id="import-file" accept="application/json" hidden>
+      </div>
+
+      <p id="progress" class="progress"></p>
+    </section>
+
+    <section id="passage-panel" class="passage" hidden></section>
+
+    <section>
+      <table id="verse-table">
+        <thead>
+          <tr><th>Reference</th><th>Verse</th><th>%</th><th>Read</th></tr>
+        </thead>
+        <tbody id="verse-body"></tbody>
+      </table>
+      <div class="pager">
+        <button id="prev-page">Prev</button>
+        <span id="page-info"></span>
+        <button id="next-page">Next</button>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

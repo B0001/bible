@@ -1,0 +1,127 @@
+* { box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1rem;
+  color: #222;
+  line-height: 1.5;
+}
+
+header h1 {
+  font-size: 1.5rem;
+  margin: 0.5rem 0 0.25rem;
+}
+
+.subtitle {
+  color: #666;
+  margin: 0 0 1rem;
+}
+
+.error {
+  background: #fdecea;
+  border: 1px solid #e0a9a3;
+  color: #8a2620;
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+}
+
+.controls label {
+  display: block;
+  margin: 0.5rem 0 0.25rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.controls select,
+.controls input[type="number"],
+.controls input[type="search"] {
+  font: inherit;
+  font-weight: normal;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+}
+
+.controls input[type="number"] { width: 5em; }
+
+#vocab {
+  width: 100%;
+  font: inherit;
+  padding: 0.5rem;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+  margin: 0.75rem 0;
+}
+
+.row label { margin: 0; }
+.row .grow { flex: 1; min-width: 12em; }
+.row .grow input { width: 100%; }
+.row .check { font-weight: normal; align-self: center; }
+
+button {
+  font: inherit;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid #999;
+  border-radius: 4px;
+  background: #f7f7f7;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) { background: #ececec; }
+button:disabled { opacity: 0.5; cursor: default; }
+
+#loading { color: #888; font-weight: normal; margin-left: 0.5rem; }
+
+.progress { color: #444; font-size: 0.95rem; }
+
+.passage {
+  background: #f4f4f4;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 0.75rem 1rem;
+  margin: 1rem 0;
+}
+
+.passage-head { font-weight: 600; margin: 0 0 0.5rem; }
+.passage-line { margin: 0.25rem 0; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+}
+
+th, td {
+  border-bottom: 1px solid #e2e2e2;
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+th { border-bottom: 2px solid #ccc; font-size: 0.9rem; }
+
+td.verse { font-size: 1.1em; line-height: 1.7; }
+td.rate { text-align: right; white-space: nowrap; }
+td.read { text-align: center; }
+
+.rtl { text-align: right; }
+
+.pager {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: center;
+  margin: 1rem 0;
+}
