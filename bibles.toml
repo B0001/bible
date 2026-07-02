@@ -17,12 +17,6 @@ lang = "el"
 graded_csv = "out/gnt_graded.csv"
 
 [[bibles]]
-id = "modern-he-ot"
-name = "Modern Hebrew OT (Mechon Mamre)"
-lang = "he"
-graded_csv = "out/modern_he_ot_graded.csv"
-
-[[bibles]]
 id = "modern-he-nt"
 name = "Modern Hebrew NT (Delitzsch)"
 lang = "he"

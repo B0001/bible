@@ -84,7 +84,7 @@ def main():
 
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
 
-    print(f"Fetching Delitzsch Hebrew NT...")
+    print("Fetching Delitzsch Hebrew NT...")
     xml_text = fetch_osis()
     verses = parse_osis(xml_text)
 

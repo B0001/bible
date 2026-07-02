@@ -244,17 +244,17 @@ Full design in [`PHASE7_DESIGN.md`](PHASE7_DESIGN.md). Four capabilities:
 
 Five texts total: NASB English, Biblical Hebrew OT (WLC), Biblical Greek NT (Byzantine), Modern Hebrew OT (Mechon Mamre), Modern Hebrew NT (Delitzsch). `--lang he` covers all three Hebrew texts — niqqud-strip logic is identical for Biblical and modern Hebrew; vocabulary distribution differs, which is the learning value of having both.
 
-## Phase 8 — Repo-wide improvement
+## Phase 8 — Repo-wide improvement ✅ DONE
 
-Full design in [`PHASE8_DESIGN.md`](PHASE8_DESIGN.md). Pays down Phase 7 debt —
-every item is a confirmed defect found by inspection: commit Phase 7 + gitignore
-`reads.db` (P8.0), strip morphhb `/` morpheme markers from WLC text (P8.1), drop
-the broken Mechon Mamre converter (P8.2), make Phase 5 personalization
-language-aware — reviews/profiles/wordfreq are currently English-hardcoded
-(P8.3), deduplicate the longest-passage algorithm shared by parser and UI
-(P8.4), grade in one tokenization pass instead of three (P8.5), RTL rendering
-for Hebrew (P8.6), docs/Docker catch-up (P8.7), tests for dash_app's pure
-logic (P8.8).
+Full design in [`PHASE8_DESIGN.md`](PHASE8_DESIGN.md). Paid down Phase 7 debt —
+every item was a confirmed defect found by inspection: ✅ commit Phase 7 +
+gitignore `reads.db` (P8.0), ✅ strip morphhb `/` morpheme markers from WLC text
+(P8.1), ✅ drop the broken Mechon Mamre converter (P8.2), ✅ language-aware
+Phase 5 personalization — reviews/profiles/wordfreq were English-hardcoded
+(P8.3), ✅ shared `longest_span()` dedupes the passage algorithm between parser
+and UI (P8.4), ✅ one-pass grading — 23k WLC verses in ~0.8s, CSV byte-identical
+(P8.5), ✅ RTL rendering for Hebrew driven by `bibles.toml` lang (P8.6),
+✅ docs/Docker catch-up (P8.7), ✅ `test_dash_app.py` — 81 tests total (P8.8).
 
 ## 5. Out of scope (for now)
 - Authentication / multi-user accounts.
