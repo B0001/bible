@@ -140,9 +140,9 @@ function longestSpan(knownArr, totalArr, minRate) {
 
 const el = {};
 for (const id of ['bible-select', 'loading', 'vocab', 'vocab-label', 'rate-min',
-  'rate-max', 'search', 'unread-only', 'find-passage', 'export-data',
-  'import-data', 'import-file', 'progress', 'passage-panel', 'verse-body',
-  'prev-page', 'next-page', 'page-info', 'error']) {
+  'rate-max', 'max-unknown', 'search', 'unread-only', 'find-passage',
+  'export-data', 'import-data', 'import-file', 'progress', 'passage-panel',
+  'verse-body', 'prev-page', 'next-page', 'page-info', 'error']) {
   el[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = document.getElementById(id);
 }
 
@@ -156,10 +156,13 @@ function applyFilters() {
   const hiNum = parseFloat(el.rateMax.value);
   const lo = (Number.isNaN(loNum) ? 0 : loNum) / 100;
   const hi = (Number.isNaN(hiNum) ? 100 : hiNum) / 100;
+  const maxUnknown = parseInt(el.maxUnknown.value, 10);
+  const capUnknown = !Number.isNaN(maxUnknown);
   const needle = stripMarks(el.search.value.trim());
   const unreadOnly = el.unreadOnly.checked;
   filtered = order.filter(i =>
     rates[i] >= lo && rates[i] <= hi &&
+    (!capUnknown || total[i] - known[i] <= maxUnknown) &&
     (!needle || searchText[i].includes(needle)) &&
     (!unreadOnly || !reads.has(bible.refs[i])));
 }
@@ -196,6 +199,10 @@ function renderTable() {
     tdRate.textContent = (rates[i] * 100).toFixed(1);
     tdRate.className = 'rate';
 
+    const tdUnknown = document.createElement('td');
+    tdUnknown.textContent = total[i] - known[i];
+    tdUnknown.className = 'rate';
+
     const tdRead = document.createElement('td');
     const cb = document.createElement('input');
     cb.type = 'checkbox';
@@ -210,7 +217,7 @@ function renderTable() {
     tdRead.appendChild(cb);
     tdRead.className = 'read';
 
-    tr.append(tdRef, tdVerse, tdRate, tdRead);
+    tr.append(tdRef, tdVerse, tdRate, tdUnknown, tdRead);
     body.appendChild(tr);
   }
   el.pageInfo.textContent = `page ${page + 1} of ${pages}`;
@@ -313,7 +320,7 @@ el.vocab.addEventListener('input', debounce(() => {
   rescore();
 }, 300));
 
-for (const input of [el.rateMin, el.rateMax, el.search]) {
+for (const input of [el.rateMin, el.rateMax, el.maxUnknown, el.search]) {
   input.addEventListener('input', debounce(() => { page = 0; refresh(); }, 200));
 }
 el.unreadOnly.addEventListener('change', () => { page = 0; refresh(); });
