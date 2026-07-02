@@ -33,6 +33,9 @@
         <label>max %
           <input type="number" id="rate-max" min="0" max="100" value="100">
         </label>
+        <label title="1 = the i+1 sweet spot: one word to learn from context">Max unknown
+          <input type="number" id="max-unknown" min="0" placeholder="off">
+        </label>
         <label class="grow">Search
           <input type="search" id="search" placeholder="reference or text…">
         </label>
@@ -56,7 +59,7 @@
     <section>
       <table id="verse-table">
         <thead>
-          <tr><th>Reference</th><th>Verse</th><th>%</th><th>Read</th></tr>
+          <tr><th>Reference</th><th>Verse</th><th>%</th><th>Unknown</th><th>Read</th></tr>
         </thead>
         <tbody id="verse-body"></tbody>
       </table>

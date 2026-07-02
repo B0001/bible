@@ -116,11 +116,31 @@ def test_update_table_caps_payload():
     """A wide-open filter never ships more than MAX_TABLE_ROWS rows."""
     import dash_app as _da
     bible_id = next(iter(_da.BIBLES))
-    records, count, _progress, _styles = update_table(bible_id, [0, 100], "", [], 0)
+    records, count, _progress, _styles = update_table(bible_id, [0, 100], None, "", [], 0)
     assert len(records) <= MAX_TABLE_ROWS
     total = _da.BIBLES[bible_id]["df"].height
     if total > MAX_TABLE_ROWS:
         assert f"first {MAX_TABLE_ROWS}" in count
+
+
+def test_to_records_unknown_column():
+    """When count columns exist, each record carries unknown = total - known."""
+    frame = pl.DataFrame(
+        {"ref": ["a"], "verse": ["x y z"], "comprehension_rate": [2 / 3],
+         "known_count": [2], "total_count": [3]}
+    )
+    assert to_records(frame, set())[0]["unknown"] == 1
+
+
+def test_update_table_max_unknown_filter():
+    """max_unknown keeps only verses with <= N unknown words."""
+    import dash_app as _da
+    bible_id = next(iter(_da.BIBLES))
+    df = _da.BIBLES[bible_id]["df"]
+    if not has_count_cols(df):
+        return  # fallback CSV without counts: filter is a no-op by design
+    records, _count, _progress, _styles = update_table(bible_id, [0, 100], 1, "", [], 0)
+    assert all(r["unknown"] <= 1 for r in records)
 
 
 def test_cell_styles_rtl_for_hebrew():

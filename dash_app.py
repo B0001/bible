@@ -208,14 +208,17 @@ def has_count_cols(df):
 
 
 def to_records(frame, read_refs):
-    """polars DataFrame -> list of dicts for DataTable, with Read column."""
-    dicts = (
-        frame.with_columns(
-            (pl.col("comprehension_rate") * 100).round(1).alias("comprehension_%")
-        )
-        .select("ref", "verse", "comprehension_%")
-        .to_dicts()
+    """polars DataFrame -> list of dicts for DataTable, with Unknown and Read columns."""
+    frame = frame.with_columns(
+        (pl.col("comprehension_rate") * 100).round(1).alias("comprehension_%")
     )
+    cols = ["ref", "verse", "comprehension_%"]
+    if has_count_cols(frame):
+        frame = frame.with_columns(
+            (pl.col("total_count") - pl.col("known_count")).alias("unknown")
+        )
+        cols.append("unknown")
+    dicts = frame.select(cols).to_dicts()
     for row in dicts:
         row["read"] = "✓" if row["ref"] in read_refs else ""
     return dicts
@@ -253,6 +256,14 @@ app.layout = html.Div(
             marks={i: str(i) for i in range(0, 101, 10)},
             tooltip={"placement": "bottom", "always_visible": False},
         ),
+        html.Label("Max unknown words per verse (blank = off; 1 = the i+1 sweet spot)"),
+        dcc.Input(
+            id="max-unknown",
+            type="number",
+            min=0,
+            placeholder="e.g. 1",
+            style={"width": "100%", "marginBottom": "1rem"},
+        ),
         html.Label("Search reference or text"),
         dcc.Input(
             id="search",
@@ -275,6 +286,7 @@ app.layout = html.Div(
                 {"name": "Reference", "id": "ref"},
                 {"name": "Verse", "id": "verse"},
                 {"name": "Comprehension %", "id": "comprehension_%", "type": "numeric"},
+                {"name": "Unknown", "id": "unknown", "type": "numeric"},
                 {"name": "Read", "id": "read"},
             ],
             data=[],
@@ -323,6 +335,7 @@ def _cell_styles(lang):
     styles = [
         {"if": {"column_id": "verse"}, "width": "60%"},
         {"if": {"column_id": "comprehension_%"}, "textAlign": "right"},
+        {"if": {"column_id": "unknown"}, "textAlign": "right", "width": "7%"},
         {"if": {"column_id": "read"}, "textAlign": "center", "width": "5%"},
     ]
     if lang in RTL_LANGS:
@@ -342,11 +355,12 @@ def _cell_styles(lang):
     Output("table", "style_cell_conditional"),
     Input("bible-select", "value"),
     Input("rate-range", "value"),
+    Input("max-unknown", "value"),
     Input("search", "value"),
     Input("unread-toggle", "value"),
     Input("reads-store", "data"),
 )
-def update_table(bible_id, rate_range, search, unread_toggle, _reads_store):
+def update_table(bible_id, rate_range, max_unknown, search, unread_toggle, _reads_store):
     if not bible_id or bible_id not in BIBLES:
         return [], "No bible loaded.", "", _cell_styles("en")
 
@@ -356,6 +370,11 @@ def update_table(bible_id, rate_range, search, unread_toggle, _reads_store):
     low, high = rate_range
     rate = pl.col("comprehension_rate") * 100
     filtered = df.filter((rate >= low) & (rate <= high))
+
+    if max_unknown is not None and has_count_cols(df):
+        filtered = filtered.filter(
+            pl.col("total_count") - pl.col("known_count") <= max_unknown
+        )
 
     if search:
         needle = _strip_marks(search).lower()
