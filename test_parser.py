@@ -9,6 +9,7 @@ from parser import (
     SemanticModel,
     comprehension_rate,
     grade,
+    grade_longest_passage,
     grade_passages,
     half_life,
     load_bible,
@@ -20,6 +21,8 @@ from parser import (
     record_review,
     stem_tokens,
     study_queue,
+    tokenize,
+    tokenize_and_stem,
     update_vocab_file,
     verse_effort,
     weighted_comprehension_rate,
@@ -27,6 +30,68 @@ from parser import (
 
 _wordfreq_available = importlib.util.find_spec("wordfreq") is not None
 _spacy_available = importlib.util.find_spec("spacy") is not None
+
+
+# --------------------------------------------------------------------------- #
+# P7.0: language-aware tokenizer
+# --------------------------------------------------------------------------- #
+
+def test_tokenize_english_unchanged():
+    assert tokenize("The Cat Sat", "en") == ["the", "cat", "sat"]
+
+
+def test_tokenize_hebrew_extracts_consonants():
+    # שָׁלוֹם with niqqud → שלום (consonants only)
+    assert tokenize("שָׁלוֹם", "he") == ["שלום"]
+
+
+def test_tokenize_hebrew_strips_cantillation():
+    # Word with tiphcha (U+05D8 is tet, but let's use a cantillation mark like etnachta U+05C1... wait
+    # Let's use a niqqud mark: patach U+05B7 on alef.
+    # אַ (alef + patach U+05B7) → alef
+    word_with_niqqud = "אַלֹהֵים"  # אֱלֹהֵים (Elohim) with niqqud
+    result = tokenize(word_with_niqqud, "he")
+    assert result == ["אלהים"]  # אלהים without niqqud
+
+
+def test_tokenize_greek_strips_diacritics():
+    # ἐν (epsilon + smooth breathing + accent) → εν
+    assert tokenize("ἐν", "el") == ["εν"]
+
+
+def test_tokenize_greek_strips_diacritics_extended():
+    # ἀρχῇ (John 1:1) → αρχη
+    assert tokenize("ἀρχῇ", "el") == ["αρχη"]
+
+
+def test_tokenize_and_stem_hebrew_no_stemmer():
+    # Hebrew tokenization should return bare consonants, not Snowball stems
+    result = tokenize_and_stem("שָׁלוֹם", "he")
+    assert result == ["שלום"]
+
+
+def test_tokenize_and_stem_greek_no_stemmer():
+    result = tokenize_and_stem("ἐν", "el")
+    assert result == ["εν"]
+
+
+def test_comprehension_rate_hebrew():
+    # שלום is in the vocab; rate should be 1.0
+    vocab = set(tokenize_and_stem("שלום", "he"))
+    assert comprehension_rate("שָׁלוֹם", vocab, lang="he") == 1.0
+
+
+def test_comprehension_rate_greek():
+    # εν is in the vocab
+    vocab = set(tokenize_and_stem("εν", "el"))
+    assert comprehension_rate("ἐν", vocab, lang="el") == 1.0
+
+
+def test_english_default_lang_unchanged():
+    # Existing English behavior is unaffected by the lang parameter default
+    vocab = set(stem_tokens("the cat sat"))
+    assert comprehension_rate("the cat sat", vocab) == 1.0
+    assert comprehension_rate("the cat sat", vocab, lang="en") == 1.0
 
 
 def test_all_known_is_one():
@@ -502,6 +567,84 @@ def test_semantic_model_credit_caps_at_sim_weight(tmp_path):
         pytest.skip("en_core_web_md not installed")
     model = SemanticModel(nlp, ["happy", "joyful", "glad"])
     assert model.credit("joyful") <= _SIM_WEIGHT
+
+
+# --------------------------------------------------------------------------- #
+# P7.4: grade_longest_passage — O(n) prefix-sum + monotone deque
+# --------------------------------------------------------------------------- #
+
+def test_longest_passage_all_known_returns_full_corpus():
+    """When all words are known, the longest passage is the entire corpus."""
+    df = pl.DataFrame({"verse": ["the cat sat", "on the mat"], "ref": ["a", "b"]})
+    vocab = set(stem_tokens("the cat sat on mat"))
+    result = grade_longest_passage(df, vocab, min_rate=0.95)
+    assert result.height == 1
+    assert result["n_verses"][0] == 2
+    assert result["start_ref"][0] == "a"
+    assert result["end_ref"][0] == "b"
+    assert result["comprehension_rate"][0] == pytest.approx(1.0)
+
+
+def test_longest_passage_nothing_known_returns_empty():
+    """When nothing is known, no passage meets the threshold."""
+    df = pl.DataFrame({"verse": ["cat dog bird"], "ref": ["a"]})
+    vocab = set()
+    result = grade_longest_passage(df, vocab, min_rate=0.95)
+    assert result.height == 0
+
+
+def test_longest_passage_alternating_finds_longest_run():
+    """Corpus alternates known/unknown; result is the longest known run."""
+    # Verses: fully known, unknown, fully known, fully known
+    # The last two form the longest run
+    vocab = set(stem_tokens("the cat"))
+    df = pl.DataFrame({
+        "verse": ["the cat", "dog bird fish", "the cat", "the cat"],
+        "ref": ["a", "b", "c", "d"],
+    })
+    result = grade_longest_passage(df, vocab, min_rate=0.95)
+    assert result.height == 1
+    assert result["n_verses"][0] == 2
+    assert result["start_ref"][0] == "c"
+    assert result["end_ref"][0] == "d"
+
+
+def test_longest_passage_empty_corpus_returns_empty():
+    """Empty DataFrame returns empty result without errors."""
+    df = pl.DataFrame({"verse": [], "ref": []}, schema={"verse": pl.Utf8, "ref": pl.Utf8})
+    result = grade_longest_passage(df, set(), min_rate=0.95)
+    assert result.height == 0
+
+
+def test_longest_passage_hebrew_tokenization():
+    """Hebrew passage scoring uses the he tokenizer (no stemming, niqqud stripped)."""
+    # Two Hebrew words, both known
+    vocab = set(tokenize_and_stem("שלום אהבה", "he"))
+    df = pl.DataFrame({
+        "verse": ["שָׁלוֹם אַהֲבָה", "כֶּלֶב"],  # shalom + love, then dog (unknown)
+        "ref": ["a", "b"],
+    })
+    result = grade_longest_passage(df, vocab, min_rate=0.95, lang="he")
+    assert result.height == 1
+    # Only first verse is fully known
+    assert result["n_verses"][0] == 1
+    assert result["start_ref"][0] == "a"
+
+
+def test_longest_passage_combined_rate_not_per_verse():
+    """The threshold applies to the combined passage, not each verse individually.
+
+    Verse a: 1/2 known (50%). Verse b: 1/2 known (50%).
+    Combined: 2/4 = 50% — below 0.95, so no passage qualifies.
+    But if vocab covers 3/4 tokens across both: 3/4 = 75%, still below 0.95.
+    """
+    vocab = set(stem_tokens("the"))  # only "the" known
+    df = pl.DataFrame({
+        "verse": ["the cat", "the dog"],  # 1/2 each; combined 2/4 = 50%
+        "ref": ["a", "b"],
+    })
+    result = grade_longest_passage(df, vocab, min_rate=0.95)
+    assert result.height == 0
 
 
 @pytest.mark.semantic

@@ -1,0 +1,29 @@
+[[bibles]]
+id = "nasb"
+name = "NASB (English)"
+lang = "en"
+graded_csv = "out/nasb_graded.csv"
+
+[[bibles]]
+id = "wlc"
+name = "Biblical Hebrew OT (WLC)"
+lang = "he"
+graded_csv = "out/wlc_graded.csv"
+
+[[bibles]]
+id = "gnt"
+name = "Biblical Greek NT (Byzantine)"
+lang = "el"
+graded_csv = "out/gnt_graded.csv"
+
+[[bibles]]
+id = "modern-he-ot"
+name = "Modern Hebrew OT (Mechon Mamre)"
+lang = "he"
+graded_csv = "out/modern_he_ot_graded.csv"
+
+[[bibles]]
+id = "modern-he-nt"
+name = "Modern Hebrew NT (Delitzsch)"
+lang = "he"
+graded_csv = "out/modern_he_nt_graded.csv"
