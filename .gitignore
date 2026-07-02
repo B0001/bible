@@ -112,3 +112,6 @@ graded.csv
 
 # per-profile review logs (Phase 5)
 *.reviews.csv
+
+# read-tracking user state (Phase 7)
+reads.db

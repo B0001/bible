@@ -232,10 +232,35 @@ once the data is loaded — a meaningful readiness signal, not just "process ali
 _Acceptance:_ `curl localhost:8050/health` returns `200 ok`; a curl to `/health`
 before the CSV exists raises before the route is registered (startup fails fast).
 
+## Phase 7 — Multilingual, Read Tracking, Longest Passage
+
+Full design in [`PHASE7_DESIGN.md`](PHASE7_DESIGN.md). Four capabilities:
+
+- **P7.0** ✅ Language-aware tokenizer (`--lang en|he|el`): Hebrew strips niqqud + extracts consonants; Greek NFD-normalizes and strips combining diacritics. `tokenize()` and `tokenize_and_stem()` added; `lang="en"` default everywhere — backward compatible. 57 tests pass.
+- **P7.1** ✅ Data converters: `scripts/convert_wlc.py` (WLC Hebrew OT from openscriptures/morphhb OSIS XML), `scripts/convert_gnt.py` (Byzantine Greek NT from byztxt), `scripts/convert_modern_he_ot.py` (Mechon Mamre), `scripts/convert_delitzsch_nt.py` (Delitzsch Hebrew NT). Each is standalone and writes `verse -- ref` format.
+- **P7.2** ✅ `bibles.toml` (stdlib `tomllib`) multi-Bible config; `dash_app.py` loads all configured CSVs at startup, skips missing with a warning; `dcc.Dropdown` Bible selector.
+- **P7.3** ✅ Read tracking: `reads.db` SQLite (stdlib `sqlite3`), `reads(bible_id, ref, read_at)` table; "Read" column (✓) in DataTable; "Mark selected as read/unread" buttons; "Show unread only" toggle; progress counter "N of M verses at ≥95% read".
+- **P7.4** ✅ `grade_longest_passage()` — O(n) prefix-sum + monotone deque in `parser.py`; `--longest-passage-out` CLI; graded CSV includes `known_count` and `total_count`; "Find longest passage" button in UI runs the same algorithm inline over those columns.
+
+Five texts total: NASB English, Biblical Hebrew OT (WLC), Biblical Greek NT (Byzantine), Modern Hebrew OT (Mechon Mamre), Modern Hebrew NT (Delitzsch). `--lang he` covers all three Hebrew texts — niqqud-strip logic is identical for Biblical and modern Hebrew; vocabulary distribution differs, which is the learning value of having both.
+
+## Phase 8 — Repo-wide improvement
+
+Full design in [`PHASE8_DESIGN.md`](PHASE8_DESIGN.md). Pays down Phase 7 debt —
+every item is a confirmed defect found by inspection: commit Phase 7 + gitignore
+`reads.db` (P8.0), strip morphhb `/` morpheme markers from WLC text (P8.1), drop
+the broken Mechon Mamre converter (P8.2), make Phase 5 personalization
+language-aware — reviews/profiles/wordfreq are currently English-hardcoded
+(P8.3), deduplicate the longest-passage algorithm shared by parser and UI
+(P8.4), grade in one tokenization pass instead of three (P8.5), RTL rendering
+for Hebrew (P8.6), docs/Docker catch-up (P8.7), tests for dash_app's pure
+logic (P8.8).
+
 ## 5. Out of scope (for now)
 - Authentication / multi-user accounts.
 - Cloud cost optimization of the build images (the Dockerfile size experiments).
-- Non-English Bibles.
+- Greek lemmatization (spaCy `el_core_news_md`) — Phase 7.5 candidate.
+- UI tab overhaul — only additive changes in Phase 7.
 
 ## 6. Open questions
 

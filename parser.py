@@ -38,6 +38,8 @@ first, then new-word unlock recommendations. All Phase 5 flags are opt-in.
 import argparse
 import csv
 import os
+import re
+import unicodedata
 import warnings
 from collections import Counter
 from contextlib import contextmanager
@@ -64,16 +66,57 @@ except ImportError:
 TOKENIZER = RegexpTokenizer(r"\w+")
 STEMMER = SnowballStemmer("english", ignore_stopwords=True)
 
+# Hebrew: strip niqqud/cantillation (U+0591–U+05C7), then extract consonants (U+05D0–U+05EA).
+_HE_STRIP = re.compile(r"[֑-ׇ]")
+_HE_TOKEN = re.compile(r"[א-ת]+")
+
+# Greek: NFD-decompose, strip combining diacritics (U+0300–U+036F), then extract letters (α–ω).
+_EL_DIACRITIC = re.compile(r"[̀-ͯ]")
+_EL_TOKEN = re.compile(r"[α-ω]+")
+
+
+def tokenize(text, lang="en"):
+    """Return a list of lowercased word tokens for the given language script.
+
+    English: NLTK RegexpTokenizer (``\\w+``).
+    Hebrew (``he``): strip niqqud/cantillation, extract consonant runs.
+    Greek (``el``): NFD-normalize, strip combining diacritics, extract letter runs.
+    No stemming is applied here; see ``tokenize_and_stem``.
+    """
+    if lang == "he":
+        return _HE_TOKEN.findall(_HE_STRIP.sub("", text))
+    if lang == "el":
+        normalized = unicodedata.normalize("NFD", text)
+        return _EL_TOKEN.findall(_EL_DIACRITIC.sub("", normalized).lower())
+    return TOKENIZER.tokenize(text.lower())
+
+
+def tokenize_and_stem(text, lang="en"):
+    """Tokenize text and apply stemming where the language supports it.
+
+    English: Snowball-stems each token (so "running" and "run" share a stem).
+    Hebrew/Greek: no stemmer available; returns bare tokens. Consonantal Hebrew
+    already conflates most morphological variants; Greek lemmatization is out of
+    scope until P7.5.
+    """
+    tokens = tokenize(text, lang)
+    if lang == "en":
+        return [STEMMER.stem(tok) for tok in tokens]
+    return tokens
+
 
 def stem_tokens(text):
     """Lowercase, tokenize, and Snowball-stem ``text`` into a list of stems."""
-    return [STEMMER.stem(tok) for tok in TOKENIZER.tokenize(text.lower())]
+    return tokenize_and_stem(text, "en")
 
 
-def load_vocab(path):
-    """Read a whitespace-separated vocabulary file into a set of stems."""
+def load_vocab(path, lang="en"):
+    """Read a whitespace-separated vocabulary file into a set of word forms.
+
+    Returns stems for English (Snowball) or bare tokens for Hebrew/Greek.
+    """
     with open(os.path.expanduser(path)) as f:
-        return set(stem_tokens(f.read()))
+        return set(tokenize_and_stem(f.read(), lang))
 
 
 def update_vocab_file(path, new_words):
@@ -216,7 +259,7 @@ def recall_prob(hist, now, decay=True):
     return 2.0 ** (-elapsed_days / half_life(hist))
 
 
-def weighted_comprehension_rate(verse, profile, now, decay=True, min_verse_length=1, semantic_model=None):
+def weighted_comprehension_rate(verse, profile, now, decay=True, min_verse_length=1, semantic_model=None, lang="en"):
     """Comprehension rate as the mean effective recall probability over a verse's tokens.
 
     Generalizes ``comprehension_rate``: with ``decay=False``, ``semantic_model=None``,
@@ -225,13 +268,13 @@ def weighted_comprehension_rate(verse, profile, now, decay=True, min_verse_lengt
     unknown tokens that are semantically similar to a known vocab word receive partial
     credit: ``p_effective = max(recall_prob, semantic_credit)``.
     """
-    tokens = TOKENIZER.tokenize(verse.lower())
+    tokens = tokenize(verse, lang)
     if not tokens or len(tokens) < min_verse_length:
         return 0.0
     total = 0.0
     for token in tokens:
-        stem = STEMMER.stem(token)
-        p = recall_prob(profile.get(stem), now, decay)
+        key = STEMMER.stem(token) if lang == "en" else token
+        p = recall_prob(profile.get(key), now, decay)
         if semantic_model is not None and p < 1.0:
             p = max(p, semantic_model.credit(token))
         total += p
@@ -263,7 +306,7 @@ def _word_difficulty(surface_word):
     return max(0.0, min(1.0, 1.0 - zipf / 8.0))
 
 
-def verse_effort(verse, profile, now, decay=True):
+def verse_effort(verse, profile, now, decay=True, lang="en"):
     """Lexical effort of the unknown/forgotten words in a verse.
 
     ``effort = Σ_i d(surface_token_i) * (1 - p_i)`` where ``p_i`` is each
@@ -276,11 +319,10 @@ def verse_effort(verse, profile, now, decay=True):
     Requires the ``[lexical]`` extra (``wordfreq``); degrades to ``d(w) = 1``
     (i.e. effort = unknown-word count) when the extra is absent.
     """
-    tokens = TOKENIZER.tokenize(verse.lower())
     effort = 0.0
-    for token in tokens:
-        stem = STEMMER.stem(token)
-        p = recall_prob(profile.get(stem), _aware(now), decay=decay)
+    for token in tokenize(verse, lang):
+        key = STEMMER.stem(token) if lang == "en" else token
+        p = recall_prob(profile.get(key), _aware(now), decay=decay)
         effort += _word_difficulty(token) * (1.0 - p)
     return effort
 
@@ -375,33 +417,35 @@ def load_bible(path):
     return pl.DataFrame(rows, schema={"verse": pl.Utf8, "ref": pl.Utf8})
 
 
-def comprehension_rate(verse, vocab_stems, min_verse_length=1):
-    """Fraction of ``verse``'s stems that appear in ``vocab_stems``.
+def comprehension_rate(verse, vocab_stems, min_verse_length=1, lang="en"):
+    """Fraction of ``verse``'s word forms that appear in ``vocab_stems``.
 
     Returns 0.0 for verses shorter than ``min_verse_length`` tokens.
+    ``vocab_stems`` should be produced by ``load_vocab(path, lang)`` so that
+    the same tokenization/stemming is applied to both sides.
     """
-    stems = stem_tokens(verse)
+    forms = tokenize_and_stem(verse, lang)
     # Guard against division by zero for empty/punctuation-only verses, even when
     # min_verse_length is set to 0.
-    if not stems or len(stems) < min_verse_length:
+    if not forms or len(forms) < min_verse_length:
         return 0.0
-    known = sum(1 for stem in stems if stem in vocab_stems)
-    return known / len(stems)
+    known = sum(1 for f in forms if f in vocab_stems)
+    return known / len(forms)
 
 
-def grade(bible_df, vocab_stems, min_verse_length=1):
+def grade(bible_df, vocab_stems, min_verse_length=1, lang="en"):
     """Add a ``comprehension_rate`` column to ``bible_df``."""
     return bible_df.with_columns(
         pl.col("verse")
         .map_elements(
-            lambda v: comprehension_rate(v, vocab_stems, min_verse_length),
+            lambda v: comprehension_rate(v, vocab_stems, min_verse_length, lang),
             return_dtype=pl.Float64,
         )
         .alias("comprehension_rate")
     )
 
 
-def grade_passages(bible_df, vocab_stems, window, min_verse_length=1):
+def grade_passages(bible_df, vocab_stems, window, min_verse_length=1, lang="en"):
     """Score every contiguous ``window``-verse passage in ``bible_df``.
 
     Slides a window of size ``window`` one verse at a time over the rows (in
@@ -422,7 +466,7 @@ def grade_passages(bible_df, vocab_stems, window, min_verse_length=1):
             "end_ref": refs[i + window - 1],
             "passage": " ".join(verses[i : i + window]),
             "comprehension_rate": comprehension_rate(
-                " ".join(verses[i : i + window]), vocab_stems, min_verse_length
+                " ".join(verses[i : i + window]), vocab_stems, min_verse_length, lang
             ),
             "num_verses": window,
         }
@@ -440,28 +484,103 @@ def grade_passages(bible_df, vocab_stems, window, min_verse_length=1):
     )
 
 
-def next_words_to_learn(bible_df, vocab_stems, known_rate=0.95, min_verse_length=1, top_n=20):
-    """Rank unknown stems by how many under-threshold verses learning them alone would unlock.
+def grade_longest_passage(bible_df, vocab_stems, min_rate=0.95, lang="en", min_verse_length=1):
+    """Find the single longest contiguous verse sequence whose combined comprehension rate
+    is >= ``min_rate``, using an O(n) prefix-sum + monotone-deque algorithm.
 
-    A verse is "unlocked" by stem ``w`` if the verse is currently below
+    The combined rate for passage [i, j) is:
+        (sum known[i..j-1]) / (sum total[i..j-1]) >= min_rate
+    iff  sum(known[k] - min_rate * total[k], k in [i,j)) >= 0
+    iff  P[j] - P[i] >= 0  where P is the prefix sum of a[k] = known[k] - min_rate*total[k].
+
+    Returns a single-row DataFrame (start_ref, end_ref, passage, n_verses,
+    comprehension_rate), or an empty DataFrame if no passage meets the threshold.
+    """
+    _SCHEMA = {
+        "start_ref": pl.Utf8, "end_ref": pl.Utf8, "passage": pl.Utf8,
+        "n_verses": pl.Int64, "comprehension_rate": pl.Float64,
+    }
+    refs = bible_df["ref"].to_list()
+    verses = bible_df["verse"].to_list()
+    n = len(verses)
+    if n == 0:
+        return pl.DataFrame(schema=_SCHEMA)
+
+    # Per-verse known/total counts (same logic as comprehension_rate)
+    known_arr = []
+    total_arr = []
+    for verse in verses:
+        forms = tokenize_and_stem(verse, lang)
+        total = len(forms)
+        known = sum(1 for f in forms if f in vocab_stems) if total >= min_verse_length else 0
+        known_arr.append(known)
+        total_arr.append(total)
+
+    # Prefix sums of a[i] = known[i] - min_rate * total[i]
+    P = [0.0] * (n + 1)
+    K = [0] * (n + 1)   # prefix known counts
+    T = [0] * (n + 1)   # prefix total counts
+    for i in range(n):
+        P[i + 1] = P[i] + known_arr[i] - min_rate * total_arr[i]
+        K[i + 1] = K[i] + known_arr[i]
+        T[i + 1] = T[i] + total_arr[i]
+
+    # Monotone deque: build strictly-decreasing stack of candidate left endpoints
+    stack = []
+    for i in range(n + 1):
+        if not stack or P[i] < P[stack[-1]]:
+            stack.append(i)
+
+    # Right-to-left sweep: pop while P[j] >= P[stack top], tracking best span
+    best_len = best_i = best_j = 0
+    j = n
+    while j >= 0 and stack:
+        while stack and P[j] >= P[stack[-1]]:
+            length = j - stack[-1]
+            if length > best_len:
+                best_len, best_i, best_j = length, stack[-1], j
+            stack.pop()
+        j -= 1
+
+    if best_len == 0:
+        return pl.DataFrame(schema=_SCHEMA)
+
+    total_known = K[best_j] - K[best_i]
+    total_words = T[best_j] - T[best_i]
+    return pl.DataFrame(
+        [{
+            "start_ref": refs[best_i],
+            "end_ref": refs[best_j - 1],
+            "passage": " ".join(verses[best_i:best_j]),
+            "n_verses": best_len,
+            "comprehension_rate": total_known / total_words if total_words > 0 else 0.0,
+        }],
+        schema=_SCHEMA,
+    )
+
+
+def next_words_to_learn(bible_df, vocab_stems, known_rate=0.95, min_verse_length=1, top_n=20, lang="en"):
+    """Rank unknown word forms by how many under-threshold verses learning them alone would unlock.
+
+    A verse is "unlocked" by form ``w`` if the verse is currently below
     ``known_rate`` but adding every occurrence of ``w`` to the known set would
     push its comprehension rate to or above ``known_rate``. Tallies unlocks per
-    unknown stem across the corpus and returns the top ``top_n``, sorted by
+    unknown form across the corpus and returns the top ``top_n``, sorted by
     unlock count descending -- the highest-leverage next words to learn.
     """
     unlock_counts = Counter()
     for verse in bible_df["verse"]:
-        stems = stem_tokens(verse)
-        total = len(stems)
+        forms = tokenize_and_stem(verse, lang)
+        total = len(forms)
         if total < min_verse_length:
             continue
-        counts = Counter(stems)
+        counts = Counter(forms)
         known = sum(c for s, c in counts.items() if s in vocab_stems)
         if known / total >= known_rate:
             continue
-        for stem, count in counts.items():
-            if stem not in vocab_stems and (known + count) / total >= known_rate:
-                unlock_counts[stem] += 1
+        for form, count in counts.items():
+            if form not in vocab_stems and (known + count) / total >= known_rate:
+                unlock_counts[form] += 1
 
     ranked = sorted(unlock_counts.items(), key=lambda kv: -kv[1])[:top_n]
     return pl.DataFrame(
@@ -470,7 +589,7 @@ def next_words_to_learn(bible_df, vocab_stems, known_rate=0.95, min_verse_length
     )
 
 
-def study_queue(bible_df, profile, now, known_rate=0.95, review_p=_REVIEW_P, min_verse_length=1, top_n=20):
+def study_queue(bible_df, profile, now, known_rate=0.95, review_p=_REVIEW_P, min_verse_length=1, top_n=20, lang="en"):
     """Combined study queue: due reviews first, then new-word unlock ranking.
 
     Due reviews: profile words whose recall_prob (with decay=True) is below
@@ -497,7 +616,7 @@ def study_queue(bible_df, profile, now, known_rate=0.95, review_p=_REVIEW_P, min
 
     # Part 2: new words — unknown stems ranked by verse-unlock count
     vocab_stems = set(profile.keys())
-    new_words_df = next_words_to_learn(bible_df, vocab_stems, known_rate, min_verse_length, top_n)
+    new_words_df = next_words_to_learn(bible_df, vocab_stems, known_rate, min_verse_length, top_n, lang)
     learn_rows = [
         {
             "stem": row["stem"],
@@ -543,6 +662,12 @@ def main():
     parser.add_argument("--bible", required=True, help="path to '<verse> -- <ref>' text")
     parser.add_argument("--vocab", required=True, help="path to whitespace-separated vocab")
     parser.add_argument("--out", required=True, help="output CSV path")
+    parser.add_argument(
+        "--lang",
+        default="en",
+        choices=["en", "he", "el"],
+        help="script/language of the Bible text: en (English, default), he (Hebrew), el (Greek)",
+    )
     parser.add_argument(
         "--known-rate",
         type=float,
@@ -614,6 +739,10 @@ def main():
         help="grant partial credit to verse words similar to known vocab words "
         "(requires [semantic] extra: spacy + en_core_web_md)",
     )
+    parser.add_argument(
+        "--longest-passage-out",
+        help="output CSV path for the longest readable passage at --known-rate",
+    )
     args = parser.parse_args()
     if args.passage_window > 1 and not args.passage_out:
         parser.error("--passage-out is required when --passage-window > 1")
@@ -635,7 +764,7 @@ def main():
         if stem:
             print(f"Recorded review of '{word}' ({outcome}) -> stem '{stem}'")
 
-    vocab_stems = load_vocab(args.vocab)
+    vocab_stems = load_vocab(args.vocab, args.lang)
     bible_df = load_bible(args.bible)
 
     now = None
@@ -656,13 +785,14 @@ def main():
                     v, profile, now, decay=args.decay,
                     min_verse_length=args.min_verse_length,
                     semantic_model=semantic_model,
+                    lang=args.lang,
                 ),
                 return_dtype=pl.Float64,
             )
             .alias("comprehension_rate")
         ).select("ref", "verse", "comprehension_rate")
     else:
-        graded = grade(bible_df, vocab_stems, args.min_verse_length).select(
+        graded = grade(bible_df, vocab_stems, args.min_verse_length, args.lang).select(
             "ref", "verse", "comprehension_rate"
         )
 
@@ -670,11 +800,24 @@ def main():
         graded = graded.with_columns(
             pl.col("verse")
             .map_elements(
-                lambda v: verse_effort(v, profile, now, decay=args.decay),
+                lambda v: verse_effort(v, profile, now, decay=args.decay, lang=args.lang),
                 return_dtype=pl.Float64,
             )
             .alias("effort")
         )
+
+    # Always write known_count and total_count so the Dash app can run the
+    # longest-passage algorithm without re-parsing the Bible.
+    graded = graded.with_columns([
+        pl.col("verse").map_elements(
+            lambda v: sum(1 for f in tokenize_and_stem(v, args.lang) if f in vocab_stems),
+            return_dtype=pl.Int64,
+        ).alias("known_count"),
+        pl.col("verse").map_elements(
+            lambda v: len(tokenize_and_stem(v, args.lang)),
+            return_dtype=pl.Int64,
+        ).alias("total_count"),
+    ])
 
     with _open_write(args.out) as f:
         graded.write_csv(f)
@@ -686,7 +829,7 @@ def main():
     )
 
     if args.passage_window > 1:
-        passages = grade_passages(bible_df, vocab_stems, args.passage_window, args.min_verse_length)
+        passages = grade_passages(bible_df, vocab_stems, args.passage_window, args.min_verse_length, args.lang)
         with _open_write(args.passage_out) as f:
             passages.write_csv(f)
 
@@ -698,7 +841,7 @@ def main():
 
     if args.next_words > 0:
         next_words = next_words_to_learn(
-            bible_df, vocab_stems, args.known_rate, args.min_verse_length, args.next_words
+            bible_df, vocab_stems, args.known_rate, args.min_verse_length, args.next_words, args.lang
         )
         with _open_write(args.next_words_out) as f:
             next_words.write_csv(f)
@@ -710,6 +853,7 @@ def main():
             known_rate=args.known_rate,
             min_verse_length=args.min_verse_length,
             top_n=args.study,
+            lang=args.lang,
         )
         with _open_write(args.study_out) as f:
             queue.write_csv(f)
@@ -718,6 +862,22 @@ def main():
         print(
             f"Study queue: {review_count} due review(s), {learn_count} new word(s) -> {args.study_out}"
         )
+
+    if args.longest_passage_out:
+        lp = grade_longest_passage(
+            bible_df, vocab_stems, args.known_rate, args.lang, args.min_verse_length
+        )
+        with _open_write(args.longest_passage_out) as f:
+            lp.write_csv(f)
+        if lp.height > 0:
+            row = lp.row(0, named=True)
+            print(
+                f"Longest passage: {row['start_ref']}–{row['end_ref']} "
+                f"({row['n_verses']} verses, {row['comprehension_rate']:.1%}) "
+                f"-> {args.longest_passage_out}"
+            )
+        else:
+            print(f"No passage >= {args.known_rate:.0%} found -> {args.longest_passage_out}")
 
 
 if __name__ == "__main__":
