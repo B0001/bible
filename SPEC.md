@@ -256,7 +256,7 @@ and UI (P8.4), ✅ one-pass grading — 23k WLC verses in ~0.8s, CSV byte-identi
 (P8.5), ✅ RTL rendering for Hebrew driven by `bibles.toml` lang (P8.6),
 ✅ docs/Docker catch-up (P8.7), ✅ `test_dash_app.py` — 81 tests total (P8.8).
 
-## Phase 9 — Static client-side reader ("viral-proof")
+## Phase 9 — Static client-side reader ("viral-proof") ✅ DONE
 
 Full design in [`PHASE9_DESIGN.md`](PHASE9_DESIGN.md). If traffic spikes, the
 answer is less backend, not more: a static site on GitHub Pages that scores
