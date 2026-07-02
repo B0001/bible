@@ -41,7 +41,6 @@ def fetch_book(book_id):
 def parse_book(xml_text, book_label):
     """Extract (ref, text) pairs from one WLC OSIS book XML."""
     root = ET.fromstring(xml_text)
-    ns = {"o": OSIS_NS}
     verses = []
     for verse_el in root.iter(f"{{{OSIS_NS}}}verse"):
         osisID = verse_el.get("osisID", "")
@@ -50,11 +49,13 @@ def parse_book(xml_text, book_label):
         if len(parts) != 3:
             continue
         ref = f"{parts[0]} {parts[1]}:{parts[2]}"
-        # Collect all <w> element text (word forms, may include niqqud)
+        # Collect all <w> element text (word forms, may include niqqud).
+        # morphhb marks morpheme boundaries with "/" (e.g. בְּ/רֵאשִׁ֖ית);
+        # strip them so the output reads as natural Hebrew words.
         words = []
         for w in verse_el.iter(f"{{{OSIS_NS}}}w"):
             if w.text:
-                words.append(w.text.strip())
+                words.append(w.text.strip().replace("/", ""))
         if words:
             verses.append((ref, " ".join(words)))
     return verses

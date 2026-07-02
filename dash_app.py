@@ -25,6 +25,8 @@ import unicodedata
 import polars as pl
 from dash import Dash, Input, Output, State, ctx, dash_table, dcc, html, no_update
 
+from parser import longest_span
+
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
@@ -310,10 +312,28 @@ app.layout = html.Div(
 # Callbacks
 # ---------------------------------------------------------------------------
 
+def _cell_styles(lang):
+    """Column styles; Hebrew verses render right-to-left."""
+    styles = [
+        {"if": {"column_id": "verse"}, "width": "60%"},
+        {"if": {"column_id": "comprehension_%"}, "textAlign": "right"},
+        {"if": {"column_id": "read"}, "textAlign": "center", "width": "5%"},
+    ]
+    if lang == "he":
+        styles[0] = {
+            "if": {"column_id": "verse"},
+            "width": "60%",
+            "direction": "rtl",
+            "textAlign": "right",
+        }
+    return styles
+
+
 @app.callback(
     Output("table", "data"),
     Output("count", "children"),
     Output("progress", "children"),
+    Output("table", "style_cell_conditional"),
     Input("bible-select", "value"),
     Input("rate-range", "value"),
     Input("search", "value"),
@@ -322,7 +342,7 @@ app.layout = html.Div(
 )
 def update_table(bible_id, rate_range, search, unread_toggle, _reads_store):
     if not bible_id or bible_id not in BIBLES:
-        return [], "No bible loaded.", ""
+        return [], "No bible loaded.", "", _cell_styles("en")
 
     df = BIBLES[bible_id]["df"]
     read_refs = get_read_refs(bible_id)
@@ -352,7 +372,7 @@ def update_table(bible_id, rate_range, search, unread_toggle, _reads_store):
         f"≥{int(KNOWN_RATE * 100)}% read."
     )
 
-    return to_records(filtered, read_refs), count, progress
+    return to_records(filtered, read_refs), count, progress, _cell_styles(BIBLES[bible_id]["lang"])
 
 
 @app.callback(
@@ -414,36 +434,12 @@ def find_passage(n_clicks, bible_id):
     total = df_ord["total_count"].to_list()
     refs = df_ord["ref"].to_list()
     verses = df_ord["verse"].to_list()
-    n = len(known)
 
-    # O(n) longest subarray with average known/total >= KNOWN_RATE.
-    # Reformulate: a[i] = known[i] - KNOWN_RATE*total[i]; find max (j-i) where sum(a[i:j]) >= 0.
-    # Uses prefix sums + monotone decreasing stack (classic max-width subarray trick).
-    a = [known[i] - KNOWN_RATE * total[i] for i in range(n)]
-    P = [0.0] * (n + 1)
-    for i in range(n):
-        P[i + 1] = P[i] + a[i]
-
-    # Candidate left endpoints: positions where P is a new minimum (decreasing stack)
-    stack = []
-    for i in range(n + 1):
-        if not stack or P[i] < P[stack[-1]]:
-            stack.append(i)
-
-    # Scan j from right; P[j] >= P[stack top] means window stack_top..j is valid
-    best_len, best_i, best_j = 0, 0, 0
-    j = n
-    while j >= 0 and stack:
-        while stack and P[j] >= P[stack[-1]]:
-            length = j - stack[-1]
-            if length > best_len:
-                best_len, best_i, best_j = length, stack[-1], j
-            stack.pop()
-        j -= 1
-
-    if best_len == 0:
+    span = longest_span(known, total, KNOWN_RATE)
+    if span is None:
         return f"No passage at ≥{int(KNOWN_RATE * 100)}% found.", panel_style
 
+    best_i, best_j = span
     passage_known = sum(known[best_i:best_j])
     passage_total = sum(total[best_i:best_j])
     rate_pct = round(100 * passage_known / passage_total, 1) if passage_total else 0.0
@@ -451,13 +447,17 @@ def find_passage(n_clicks, bible_id):
         f"{refs[i]}  {verses[i]}" for i in range(best_i, best_j)
     )
 
+    pre_style = {"whiteSpace": "pre-wrap", "margin": 0}
+    if BIBLES[bible_id]["lang"] == "he":
+        pre_style.update({"direction": "rtl", "textAlign": "right"})
+
     children = [
         html.P(
             f"Longest passage: {refs[best_i]} – {refs[best_j - 1]} "
-            f"({best_len} verses, {rate_pct}% comprehension)",
+            f"({best_j - best_i} verses, {rate_pct}% comprehension)",
             style={"fontWeight": "bold", "marginBottom": "0.5rem"},
         ),
-        html.Pre(passage_text, style={"whiteSpace": "pre-wrap", "margin": 0}),
+        html.Pre(passage_text, style=pre_style),
     ]
     return children, panel_style
 

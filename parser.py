@@ -188,13 +188,15 @@ def _aware(ts):
     return ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts
 
 
-def record_review(vocab_path, word, correct, when=None):
+def record_review(vocab_path, word, correct, when=None, lang="en"):
     """Append one review event for ``word`` to the profile's review log.
 
-    ``word`` is stemmed before storage. Creates the log (with header) on first
-    use. Returns the stem recorded, or None if ``word`` has no word tokens.
+    ``word`` is normalized with the language's tokenizer (stemmed for English,
+    niqqud/diacritics stripped for Hebrew/Greek) so log keys match verse tokens.
+    Creates the log (with header) on first use. Returns the form recorded, or
+    None if ``word`` has no word tokens.
     """
-    stems = stem_tokens(word)
+    stems = tokenize_and_stem(word, lang)
     if not stems:
         return None
     stem = stems[0]
@@ -213,14 +215,14 @@ def record_review(vocab_path, word, correct, when=None):
     return stem
 
 
-def load_profile(vocab_path):
+def load_profile(vocab_path, lang="en"):
     """Load a profile: seed vocab (all stems) plus replayed review history.
 
     Returns ``dict[stem -> WordHistory]``. Seed words with no reviews get
     ``WordHistory(0, 0, None)``; words seen only in the review log are included
     too. The review log is ``<vocab>.reviews.csv`` (may be absent).
     """
-    profile = {stem: WordHistory() for stem in load_vocab(vocab_path)}
+    profile = {stem: WordHistory() for stem in load_vocab(vocab_path, lang)}
     path = _reviews_path(vocab_path)
     if os.path.exists(path):
         with open(path, newline="") as f:
@@ -284,12 +286,13 @@ def weighted_comprehension_rate(verse, profile, now, decay=True, min_verse_lengt
 _wordfreq_warned = False
 
 
-def _word_difficulty(surface_word):
+def _word_difficulty(surface_word, lang="en"):
     """Difficulty score d(w) ∈ [0,1]: 1 = very rare, 0 = extremely common.
 
     Uses the Zipf frequency from ``wordfreq`` when the ``[lexical]`` extra is
-    installed: ``d = clamp(1 - zipf / 8, 0, 1)``. Falls back to ``d = 1`` with
-    a one-time warning when the extra is absent.
+    installed: ``d = clamp(1 - zipf / 8, 0, 1)``. wordfreq ships Hebrew (``he``)
+    and Greek (``el``) wordlists, so the score is meaningful for all supported
+    languages. Falls back to ``d = 1`` with a one-time warning when absent.
     """
     global _wordfreq_warned
     if not _WORDFREQ_AVAILABLE:
@@ -302,7 +305,7 @@ def _word_difficulty(surface_word):
             )
             _wordfreq_warned = True
         return 1.0
-    zipf = _zipf_frequency(surface_word.lower(), "en")
+    zipf = _zipf_frequency(surface_word.lower(), lang)
     return max(0.0, min(1.0, 1.0 - zipf / 8.0))
 
 
@@ -323,7 +326,7 @@ def verse_effort(verse, profile, now, decay=True, lang="en"):
     for token in tokenize(verse, lang):
         key = STEMMER.stem(token) if lang == "en" else token
         p = recall_prob(profile.get(key), _aware(now), decay=decay)
-        effort += _word_difficulty(token) * (1.0 - p)
+        effort += _word_difficulty(token, lang) * (1.0 - p)
     return effort
 
 
@@ -364,14 +367,29 @@ class SemanticModel:
         return _SIM_WEIGHT * max_sim if max_sim >= _SIM_TAU else 0.0
 
 
-def load_semantic_model(vocab_path):
+def load_semantic_model(vocab_path, lang="en"):
     """Load the spaCy model and pre-compute profile embeddings.
 
     Returns a ``SemanticModel`` if spaCy and ``en_core_web_md`` are available;
     returns ``None`` with a one-time warning otherwise. Surface words (not stems)
     from the vocab file are embedded, per PHASE5_DESIGN.md §4's critical constraint.
+
+    English only: spaCy ships no usable Hebrew/Greek vector models, so
+    ``lang != "en"`` returns ``None`` with a warning rather than silently
+    scoring with the wrong language's embeddings.
     """
     global _semantic_warned
+
+    if lang != "en":
+        if not _semantic_warned:
+            warnings.warn(
+                f"--semantic is English-only (no spaCy vectors for {lang!r}); "
+                "falling back to credit=0.",
+                ImportWarning,
+                stacklevel=2,
+            )
+            _semantic_warned = True
+        return None
 
     if not _SPACY_AVAILABLE:
         if not _semantic_warned:
@@ -484,14 +502,43 @@ def grade_passages(bible_df, vocab_stems, window, min_verse_length=1, lang="en")
     )
 
 
-def grade_longest_passage(bible_df, vocab_stems, min_rate=0.95, lang="en", min_verse_length=1):
-    """Find the single longest contiguous verse sequence whose combined comprehension rate
-    is >= ``min_rate``, using an O(n) prefix-sum + monotone-deque algorithm.
+def longest_span(known, total, min_rate):
+    """Longest contiguous index span ``[i, j)`` with combined ``known/total >= min_rate``.
 
-    The combined rate for passage [i, j) is:
+    O(n) via prefix sums + monotone stack: the combined rate for [i, j) is
         (sum known[i..j-1]) / (sum total[i..j-1]) >= min_rate
-    iff  sum(known[k] - min_rate * total[k], k in [i,j)) >= 0
     iff  P[j] - P[i] >= 0  where P is the prefix sum of a[k] = known[k] - min_rate*total[k].
+    Left endpoints only need considering where P hits a new minimum (decreasing
+    stack); a right-to-left sweep pops matches while tracking the widest span.
+
+    Returns ``(start, end)`` half-open indices, or ``None`` if no span qualifies.
+    Shared by ``grade_longest_passage`` and the Dash "Find longest passage" button.
+    """
+    n = len(known)
+    P = [0.0] * (n + 1)
+    for i in range(n):
+        P[i + 1] = P[i] + known[i] - min_rate * total[i]
+
+    stack = []
+    for i in range(n + 1):
+        if not stack or P[i] < P[stack[-1]]:
+            stack.append(i)
+
+    best_len = best_i = best_j = 0
+    j = n
+    while j >= 0 and stack:
+        while stack and P[j] >= P[stack[-1]]:
+            if j - stack[-1] > best_len:
+                best_len, best_i, best_j = j - stack[-1], stack[-1], j
+            stack.pop()
+        j -= 1
+
+    return (best_i, best_j) if best_len > 0 else None
+
+
+def grade_longest_passage(bible_df, vocab_stems, min_rate=0.95, lang="en", min_verse_length=1):
+    """Find the single longest contiguous verse sequence whose combined comprehension
+    rate is >= ``min_rate`` (see ``longest_span`` for the algorithm).
 
     Returns a single-row DataFrame (start_ref, end_ref, passage, n_verses,
     comprehension_rate), or an empty DataFrame if no passage meets the threshold.
@@ -502,9 +549,6 @@ def grade_longest_passage(bible_df, vocab_stems, min_rate=0.95, lang="en", min_v
     }
     refs = bible_df["ref"].to_list()
     verses = bible_df["verse"].to_list()
-    n = len(verses)
-    if n == 0:
-        return pl.DataFrame(schema=_SCHEMA)
 
     # Per-verse known/total counts (same logic as comprehension_rate)
     known_arr = []
@@ -516,43 +560,19 @@ def grade_longest_passage(bible_df, vocab_stems, min_rate=0.95, lang="en", min_v
         known_arr.append(known)
         total_arr.append(total)
 
-    # Prefix sums of a[i] = known[i] - min_rate * total[i]
-    P = [0.0] * (n + 1)
-    K = [0] * (n + 1)   # prefix known counts
-    T = [0] * (n + 1)   # prefix total counts
-    for i in range(n):
-        P[i + 1] = P[i] + known_arr[i] - min_rate * total_arr[i]
-        K[i + 1] = K[i] + known_arr[i]
-        T[i + 1] = T[i] + total_arr[i]
-
-    # Monotone deque: build strictly-decreasing stack of candidate left endpoints
-    stack = []
-    for i in range(n + 1):
-        if not stack or P[i] < P[stack[-1]]:
-            stack.append(i)
-
-    # Right-to-left sweep: pop while P[j] >= P[stack top], tracking best span
-    best_len = best_i = best_j = 0
-    j = n
-    while j >= 0 and stack:
-        while stack and P[j] >= P[stack[-1]]:
-            length = j - stack[-1]
-            if length > best_len:
-                best_len, best_i, best_j = length, stack[-1], j
-            stack.pop()
-        j -= 1
-
-    if best_len == 0:
+    span = longest_span(known_arr, total_arr, min_rate)
+    if span is None:
         return pl.DataFrame(schema=_SCHEMA)
 
-    total_known = K[best_j] - K[best_i]
-    total_words = T[best_j] - T[best_i]
+    i, j = span
+    total_known = sum(known_arr[i:j])
+    total_words = sum(total_arr[i:j])
     return pl.DataFrame(
         [{
-            "start_ref": refs[best_i],
-            "end_ref": refs[best_j - 1],
-            "passage": " ".join(verses[best_i:best_j]),
-            "n_verses": best_len,
+            "start_ref": refs[i],
+            "end_ref": refs[j - 1],
+            "passage": " ".join(verses[i:j]),
+            "n_verses": j - i,
             "comprehension_rate": total_known / total_words if total_words > 0 else 0.0,
         }],
         schema=_SCHEMA,
@@ -760,7 +780,7 @@ def main():
 
     if args.review:
         word, outcome = args.review
-        stem = record_review(args.vocab, word, outcome == "correct")
+        stem = record_review(args.vocab, word, outcome == "correct", lang=args.lang)
         if stem:
             print(f"Recorded review of '{word}' ({outcome}) -> stem '{stem}'")
 
@@ -771,53 +791,55 @@ def main():
     profile = None
     if args.decay or args.study > 0 or args.effort or args.semantic:
         now = datetime.now(timezone.utc)
-        profile = load_profile(args.vocab)
+        profile = load_profile(args.vocab, args.lang)
 
     semantic_model = None
     if args.semantic:
-        semantic_model = load_semantic_model(args.vocab)
+        semantic_model = load_semantic_model(args.vocab, args.lang)
+
+    # One tokenization pass computes rate + known/total counts. The counts are
+    # always written so the Dash app can run the longest-passage algorithm
+    # without re-parsing the Bible.
+    verses = bible_df["verse"].to_list()
+    knowns, totals = [], []
+    for verse in verses:
+        forms = tokenize_and_stem(verse, args.lang)
+        knowns.append(sum(1 for f in forms if f in vocab_stems))
+        totals.append(len(forms))
 
     if args.decay or args.semantic:
-        graded = bible_df.with_columns(
-            pl.col("verse")
-            .map_elements(
-                lambda v: weighted_comprehension_rate(
-                    v, profile, now, decay=args.decay,
-                    min_verse_length=args.min_verse_length,
-                    semantic_model=semantic_model,
-                    lang=args.lang,
-                ),
-                return_dtype=pl.Float64,
+        rates = [
+            weighted_comprehension_rate(
+                v, profile, now, decay=args.decay,
+                min_verse_length=args.min_verse_length,
+                semantic_model=semantic_model,
+                lang=args.lang,
             )
-            .alias("comprehension_rate")
-        ).select("ref", "verse", "comprehension_rate")
+            for v in verses
+        ]
     else:
-        graded = grade(bible_df, vocab_stems, args.min_verse_length, args.lang).select(
-            "ref", "verse", "comprehension_rate"
-        )
+        rates = [
+            k / t if t and t >= args.min_verse_length else 0.0
+            for k, t in zip(knowns, totals)
+        ]
+
+    graded = bible_df.with_columns(
+        pl.Series("comprehension_rate", rates, dtype=pl.Float64)
+    ).select("ref", "verse", "comprehension_rate")
 
     if args.effort:
         graded = graded.with_columns(
-            pl.col("verse")
-            .map_elements(
-                lambda v: verse_effort(v, profile, now, decay=args.decay, lang=args.lang),
-                return_dtype=pl.Float64,
+            pl.Series(
+                "effort",
+                [verse_effort(v, profile, now, decay=args.decay, lang=args.lang) for v in verses],
+                dtype=pl.Float64,
             )
-            .alias("effort")
         )
 
-    # Always write known_count and total_count so the Dash app can run the
-    # longest-passage algorithm without re-parsing the Bible.
-    graded = graded.with_columns([
-        pl.col("verse").map_elements(
-            lambda v: sum(1 for f in tokenize_and_stem(v, args.lang) if f in vocab_stems),
-            return_dtype=pl.Int64,
-        ).alias("known_count"),
-        pl.col("verse").map_elements(
-            lambda v: len(tokenize_and_stem(v, args.lang)),
-            return_dtype=pl.Int64,
-        ).alias("total_count"),
-    ])
+    graded = graded.with_columns(
+        pl.Series("known_count", knowns, dtype=pl.Int64),
+        pl.Series("total_count", totals, dtype=pl.Int64),
+    )
 
     with _open_write(args.out) as f:
         graded.write_csv(f)

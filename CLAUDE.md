@@ -4,12 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project does
 
-A vocabulary-graded Bible reader. The core idea: given a user's known-words list
-("your vocab"), score every verse by its **comprehension rate** — the fraction of
-its words the user already knows — and surface verses at the language-learning
-sweet spot (~95% known words, "i+1"). Source text is the NASB Bible in
-`verse -- reference` line format (sourced from the `tushortz/variety-bible-text`
-GitHub repo).
+A vocabulary-graded Bible reader for **English, Biblical Hebrew, and Koine
+Greek**. The core idea: given a user's known-words list ("your vocab"), score
+every verse by its **comprehension rate** — the fraction of its words the user
+already knows — and surface verses at the language-learning sweet spot (~95%
+known words, "i+1"). Texts are `verse -- reference` line format: NASB English
+(from `tushortz/variety-bible-text`), WLC Hebrew OT, Byzantine Greek NT, and
+the Delitzsch Hebrew NT (fetched by `scripts/convert_*.py`).
 
 See `SPEC.md` for the improvement plan and locked-in decisions; this section
 describes the current state.
@@ -22,13 +23,22 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
 
 - **`parser.py`** — the canonical scoring pipeline, a parameterized module with a
   `main()` and CLI args. Reads a `<verse> -- <reference>` Bible file and a
-  whitespace-separated vocab file. **Scoring is stem-aware**: both verse tokens
-  and the vocab are lowercased and Snowball-stemmed, so a vocab word counts all
-  its morphological variants (vocab "run" → "running", "ran"). Per verse:
-  `comprehension_rate = (# verse stems in the stemmed vocab set) / (total stems)`;
+  whitespace-separated vocab file. **Language-aware tokenization** via
+  `tokenize(text, lang)` / `tokenize_and_stem(text, lang)` and the `--lang
+  en|he|el` flag: English is lowercased + Snowball-stemmed (vocab "run" →
+  "running", "ran"); Hebrew strips niqqud/cantillation (U+0591–U+05C7) and
+  extracts consonant runs (no stemmer — consonantal forms already conflate
+  variants); Greek NFD-normalizes and strips combining diacritics. Per verse:
+  `comprehension_rate = (# verse forms in the vocab form set) / (total forms)`;
   verses shorter than `--min-verse-length` score 0. Writes `ref, verse,
-  comprehension_rate` to the `--out` CSV. Key functions: `stem_tokens`,
-  `comprehension_rate`, `grade`, `load_bible`, `load_vocab`. With
+  comprehension_rate, known_count, total_count` to the `--out` CSV in **one
+  tokenization pass** (the counts feed the UI's longest-passage button). Key
+  functions: `tokenize`, `tokenize_and_stem`, `stem_tokens` (English shortcut),
+  `comprehension_rate`, `grade`, `load_bible`, `load_vocab`.
+  `--longest-passage-out PATH` writes the single longest contiguous verse span
+  whose combined rate ≥ `--known-rate`, via `longest_span()` — an O(n)
+  prefix-sum + monotone-stack algorithm shared with the Dash UI (import it,
+  don't re-implement it). With
   `--passage-window N` (+ required `--passage-out`), also writes per-passage
   scores: `grade_passages()` slides an N-verse window one verse at a time and
   scores each window's concatenated text as a single unit, so multi-verse
@@ -55,21 +65,42 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   unknown verse tokens similar to known vocab words via `SemanticModel` /
   `load_semantic_model()`; requires `pip install '.[semantic]'` (spaCy
   `en_core_web_md`), embeds **surface forms** (not stems), degrades to credit=0
-  when absent. All Phase 5 flags are opt-in; without them scoring is byte-identical
-  to the binary path. Review logs (`*.reviews.csv`) are gitignored.
-- **`dash_app.py`** — Plotly Dash web front end. Loads the graded CSV
-  (`BIBLE_GRADED_CSV`, default `out/graded.csv`) and renders a sortable table
-  filtered by a comprehension-rate RangeSlider and a reference/text search box
-  (callback-driven). Host/port/debug come from env vars (`DASH_HOST`,
-  `DASH_PORT`, `DASH_DEBUG`).
-- **`test_parser.py`** — 47 pytest unit tests covering scoring core, Phase 5
-  recall model, study queue, lexical effort, and semantic credit. Tests marked
+  when absent, and is **English-only** (`lang != "en"` returns None with a
+  warning). All Phase 5 features are language-aware: `record_review`,
+  `load_profile`, and `_word_difficulty` take `lang` so Hebrew/Greek profiles
+  key by stripped forms and wordfreq uses the right wordlist. All Phase 5 flags
+  are opt-in; without them scoring is byte-identical to the binary path.
+  Review logs (`*.reviews.csv`) are gitignored.
+- **`dash_app.py`** — Plotly Dash web front end. Loads all Bibles listed in
+  `bibles.toml` (stdlib `tomllib`; entries with missing CSVs are skipped with a
+  warning; falls back to `BIBLE_GRADED_CSV`, default `out/graded.csv`). UI: a
+  Bible dropdown, comprehension-rate RangeSlider, **nikudim-insensitive search**
+  (a `verse_plain` column is built at load via `_strip_marks`; the needle is
+  stripped too), per-verse **read tracking** in SQLite (`READS_DB`, default
+  `reads.db` — gitignored; mark read/unread buttons, unread-only filter,
+  progress line), a "Find longest passage" button (imports `longest_span` from
+  parser), and **RTL rendering** for Hebrew (`_cell_styles(lang)` sets
+  `direction: rtl` on the verse column when the Bible's `lang == "he"`).
+  Host/port/debug come from env vars (`DASH_HOST`, `DASH_PORT`, `DASH_DEBUG`).
+- **`scripts/`** — standalone converters that download source texts into
+  `data/` (gitignored): `convert_wlc.py` (Hebrew OT from openscriptures/morphhb
+  OSIS XML; strips morphhb's `/` morpheme markers), `convert_gnt.py` (Greek NT
+  from byztxt CSV files), `convert_delitzsch_nt.py` (Hebrew NT from
+  HebrewNewTestament/HebDelitzsch OSIS).
+- **`test_parser.py` + `test_dash_app.py`** — 81 pytest unit tests covering the
+  scoring core, tokenizers, Phase 5 recall model, study queue, lexical effort,
+  semantic credit, longest passage, and the Dash app's pure logic (mark
+  stripping, read-tracking round-trip). `test_dash_app.py` sets
+  `BIBLE_GRADED_CSV`/`READS_DB` env vars **before importing dash_app** — keep it
+  that way, the module loads data at import time. Tests marked
   `@pytest.mark.lexical` / `@pytest.mark.semantic` skip when those extras are
   absent; CI runs them in separate jobs that install the extras.
-- **`sample/`** — runnable sample data: `nasb_sample.txt` (12 verses) and
-  `my_vocab.txt` (EF top-100 English words, rescued from the old Scala file).
+- **`sample/`** — runnable sample data: `nasb_sample.txt` (12 verses),
+  `my_vocab.txt` (EF top-100 English words), `hebrew_vocab.txt`,
+  `greek_vocab.txt` (starter vocabularies for the original languages).
 
-**Data flow:** `parser.py` (vocab + Bible text) → graded CSV → `dash_app.py`.
+**Data flow:** `scripts/convert_*.py` → `data/*.txt` → `parser.py --lang X` →
+`out/<bible>_graded.csv` (listed in `bibles.toml`) → `dash_app.py`.
 
 ## Running
 
@@ -78,12 +109,16 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 
 # Run the scoring pipeline on the bundled sample data
 .venv/bin/python parser.py --bible sample/nasb_sample.txt \
-    --vocab sample/my_vocab.txt --out out/graded.csv
+    --vocab sample/my_vocab.txt --out out/nasb_graded.csv
+
+# Hebrew / Greek (fetch texts first via scripts/convert_*.py)
+.venv/bin/python parser.py --bible data/wlc.txt \
+    --vocab sample/hebrew_vocab.txt --out out/wlc_graded.csv --lang he
 
 # Tests
 .venv/bin/python -m pytest
 
-# Dash web app (reads out/graded.csv, binds 127.0.0.1:8050)
+# Dash web app (loads bibles.toml entries whose CSVs exist, binds 127.0.0.1:8050)
 .venv/bin/python dash_app.py
 ```
 
@@ -103,8 +138,10 @@ python3 start.py --region us-east-1 --user ec2-user --pem key.pem [--instance_id
 
 One `Dockerfile` on `python:3.12-slim`: installs from `requirements.txt` (core
 deps only — optional extras are not in the image), downloads NLTK stopwords,
-pre-grades the sample data, and `CMD`s `dash_app.py` on `0.0.0.0:8050`.
-`requirements.txt` mirrors the core pyproject deps; `pyproject.toml` is canonical.
+copies `bibles.toml` + `scripts/`, pre-grades the sample data to
+`out/nasb_graded.csv`, and serves via gunicorn (`dash_app:server`) on
+`0.0.0.0:8050` with a `/health` endpoint. `requirements.txt` mirrors the core
+pyproject deps; `pyproject.toml` is canonical.
 
 Supporting scripts (`aws-builder-userdata.sh`, `gcp-builder-userdata.sh`,
 `minio-start.sh`, `start.py`) are infra helpers unrelated to the app logic.

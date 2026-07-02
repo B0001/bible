@@ -570,8 +570,77 @@ def test_semantic_model_credit_caps_at_sim_weight(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# P8.3: language-aware Phase 5 personalization
+# --------------------------------------------------------------------------- #
+
+def test_record_review_hebrew_strips_niqqud(tmp_path):
+    """A Hebrew review word with niqqud is stored as bare consonants, matching verse tokens."""
+    p = tmp_path / "vocab.txt"
+    p.write_text("אהבה\n")
+    stem = record_review(str(p), "שָׁלוֹם", correct=True, when=NOW, lang="he")
+    assert stem == "שלום"
+    profile = load_profile(str(p), lang="he")
+    assert "שלום" in profile
+    assert profile["שלום"].n_correct == 1
+
+
+def test_hebrew_review_affects_decay_scoring(tmp_path):
+    """End-to-end: a reviewed Hebrew word scores by recall probability in a verse."""
+    p = tmp_path / "vocab.txt"
+    p.write_text("")  # empty seed vocab
+    record_review(str(p), "שָׁלוֹם", correct=True, when=NOW, lang="he")
+    profile = load_profile(str(p), lang="he")
+    # Verse is just the reviewed word (with niqqud); freshly reviewed -> p = 1.0
+    rate = weighted_comprehension_rate("שָׁלוֹם", profile, NOW, decay=True, lang="he")
+    assert rate == pytest.approx(1.0)
+
+
+def test_load_profile_hebrew_seed_vocab(tmp_path):
+    """Hebrew seed vocab keys are bare consonants, not English stems."""
+    p = tmp_path / "vocab.txt"
+    p.write_text("שָׁלוֹם\n")
+    profile = load_profile(str(p), lang="he")
+    assert "שלום" in profile
+
+
+def test_load_semantic_model_refuses_non_english(tmp_path):
+    """Semantic credit is English-only; other languages get None + warning."""
+    import parser as _parser
+    _parser._semantic_warned = False
+    try:
+        p = tmp_path / "vocab.txt"
+        p.write_text("שלום\n")
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            assert load_semantic_model(str(p), lang="he") is None
+    finally:
+        _parser._semantic_warned = False
+
+
+@pytest.mark.lexical
+@pytest.mark.skipif(not _wordfreq_available, reason="[lexical] extra not installed")
+def test_word_difficulty_uses_hebrew_wordlist():
+    """A very common Hebrew word gets a real (below-fallback) difficulty for lang='he'."""
+    from parser import _word_difficulty
+    # של is among the most frequent Hebrew words; its Zipf freq must register
+    assert _word_difficulty("של", "he") < 1.0
+
+
+# --------------------------------------------------------------------------- #
 # P7.4: grade_longest_passage — O(n) prefix-sum + monotone deque
 # --------------------------------------------------------------------------- #
+
+def test_longest_span_empty_input_returns_none():
+    from parser import longest_span
+    assert longest_span([], [], 0.95) is None
+
+
+def test_longest_span_direct():
+    from parser import longest_span
+    # verses: 2/2, 0/3, 2/2, 2/2 — longest qualifying span is indices [2, 4)
+    assert longest_span([2, 0, 2, 2], [2, 3, 2, 2], 0.95) == (2, 4)
+
 
 def test_longest_passage_all_known_returns_full_corpus():
     """When all words are known, the longest passage is the entire corpus."""

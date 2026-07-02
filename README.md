@@ -1,23 +1,30 @@
 # Bible Reader — graded by your vocabulary
 
-Find Bible verses you can actually read. Given a list of words you already know,
-this scores every verse by its **comprehension rate** — the fraction of its words
-in your vocabulary — so you can read at the ~95% "sweet spot" that language
-research associates with effective vocabulary growth.
+Find Bible verses you can actually read — in **English, Biblical Hebrew, or
+Koine Greek**. Given a list of words you already know, this scores every verse
+by its **comprehension rate** — the fraction of its words in your vocabulary —
+so you can read at the ~95% "sweet spot" that language research associates
+with effective vocabulary growth.
 
-Matching is **stem-aware**: knowing `run` also credits `running` and `ran`.
+English matching is **stem-aware** (knowing `run` also credits `running` and
+`ran`); Hebrew strips nikudim/cantillation so vocab matches any pointed text;
+Greek strips diacritics.
 
 ## How it works
 
 ```
 your vocab ─┐
-            ├─► parser.py (polars + NLTK) ─► out/graded.csv ─► dash_app.py (web UI)
-Bible text ─┘     stem & score each verse      ref,verse,rate    filter & search
+            ├─► parser.py (--lang en|he|el) ─► out/<bible>_graded.csv ─► dash_app.py
+Bible text ─┘     tokenize & score verses        ref,verse,rate,counts     multi-Bible UI
 ```
 
 - **`parser.py`** — scoring pipeline. Input is a Bible text with one
   `verse text -- reference` per line and a whitespace-separated vocab file.
-- **`dash_app.py`** — web UI to filter verses by comprehension rate and search.
+- **`dash_app.py`** — web UI: Bible selector (`bibles.toml`), comprehension
+  filter, nikudim-insensitive search, per-verse read tracking (SQLite), and a
+  "find longest readable passage" button (O(n) algorithm).
+- **`scripts/`** — converters that download source texts (WLC Hebrew OT,
+  Byzantine Greek NT, Delitzsch Hebrew NT) into the expected line format.
 - **`sample/`** — bundled sample data so everything runs out of the box.
 
 ## Quickstart
@@ -49,6 +56,30 @@ python3 -m venv .venv
 python parser.py --bible nasb.txt --vocab my_words.txt --out out/graded.csv \
     --known-rate 0.95 --min-verse-length 1
 ```
+
+## Hebrew and Greek
+
+Download the original-language texts, grade them against your vocab, and the
+web UI picks them up via `bibles.toml`:
+
+```bash
+# Fetch source texts (network required; ~10 MB total)
+python scripts/convert_wlc.py            # Biblical Hebrew OT  -> data/wlc.txt
+python scripts/convert_gnt.py            # Byzantine Greek NT  -> data/gnt.txt
+python scripts/convert_delitzsch_nt.py   # Modern Hebrew NT    -> data/modern_he_nt.txt
+
+# Grade each with the right --lang (sample starter vocabs included)
+python parser.py --bible data/wlc.txt --vocab sample/hebrew_vocab.txt \
+    --out out/wlc_graded.csv --lang he
+python parser.py --bible data/gnt.txt --vocab sample/greek_vocab.txt \
+    --out out/gnt_graded.csv --lang el
+python parser.py --bible data/modern_he_nt.txt --vocab sample/hebrew_vocab.txt \
+    --out out/modern_he_nt_graded.csv --lang he
+```
+
+Hebrew vocab files can be written with or without nikudim — both are normalized
+to bare consonants. In the UI, search is nikudim-insensitive (type `שלום`, match
+`שָׁלוֹם`) and Hebrew verses render right-to-left.
 
 ## Learner analytics
 
@@ -104,6 +135,8 @@ is excluded from version control (`.gitignore`).
 | `--bible` | *(required)* | `verse -- ref` text file |
 | `--vocab` | *(required)* | whitespace-separated vocab / profile file |
 | `--out` | *(required)* | output CSV path |
+| `--lang` | `en` | text language: `en`, `he` (Hebrew), `el` (Greek) |
+| `--longest-passage-out` | — | write the longest passage at `--known-rate` to a CSV |
 | `--known-rate` | `0.95` | comprehension threshold for the "easy" summary |
 | `--min-verse-length` | `1` | verses shorter than this score 0 |
 | `--passage-window N` | `1` (off) | sliding window size for passage scoring |
@@ -118,7 +151,9 @@ is excluded from version control (`.gitignore`).
 | `--effort` | off | add a lexical-effort column to the graded output |
 | `--semantic` | off | grant partial credit to semantically similar words |
 
-`dash_app.py` env vars: `BIBLE_GRADED_CSV` (default `out/graded.csv`),
+`dash_app.py` reads `bibles.toml` for the Bible list (falls back to
+`BIBLE_GRADED_CSV`, default `out/graded.csv`, when no configured CSV exists).
+Other env vars: `READS_DB` (read-tracking SQLite, default `reads.db`),
 `DASH_HOST` (default `127.0.0.1`), `DASH_PORT` (default `8050`), `DASH_DEBUG`.
 
 ## Docker
