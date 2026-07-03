@@ -282,6 +282,21 @@ Twelve Bibles are pre-configured in `bibles.toml`; the static site's manifest
 carries per-language stopword lists and vendored Snowball JS stemmers so
 browser stemming matches the pipeline.
 
+## Phase 10 — Audio Bible (verse-aligned Hebrew OT audio)
+
+Full design in [`PHASE10_DESIGN.md`](PHASE10_DESIGN.md). We hold a chapter-level
+Hebrew OT audio corpus (FCBH-derived WAVs, mono 16 kHz — already ASR-ready) in
+Google Drive. Plan: ingest/transcode locally (P10.0, including a one-chapter
+**edition gate** confirming the narration matches WLC), then cloud-ASR forced
+alignment — Whisper via Groq/OpenAI + anchor matching using the existing
+`tokenize(_, "he")` normalization — producing per-chapter sidecar JSONs with
+per-verse `start/end/confidence` (P10.1, ~$8–25 one-time, no local GPU needed).
+Playback wires into the Dash app (click-verse-to-seek, live highlight, P10.2)
+and an optional *local-only* static-reader mode (P10.3) — FCBH licensing means
+audio never ships with the public site. Stretch: listening-mode reviews feeding
+the Phase 5 SRS model (P10.4). This retires the old BibleGateway-scraping
+"audiobible" scripts.
+
 ## 5. Out of scope (for now)
 - Authentication / multi-user accounts.
 - Cloud cost optimization of the build images (the Dockerfile size experiments).
