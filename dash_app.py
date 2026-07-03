@@ -14,6 +14,7 @@ Configuration (env vars):
     DASH_PORT          bind port (default: 8050)
     DASH_DEBUG         "1"/"true" to enable debug mode (default: off)
 """
+import json
 import logging
 import os
 import re
@@ -24,6 +25,7 @@ import unicodedata
 
 import polars as pl
 from dash import Dash, Input, Output, State, ctx, dash_table, dcc, html, no_update
+from flask import send_from_directory
 
 from parser import longest_span
 
@@ -68,6 +70,45 @@ def load_graded_raw(path):
     return pl.read_csv(path)
 
 
+def load_audio_manifest(manifest_path):
+    """Load a Phase 10 audio manifest and its chapter sidecar JSONs.
+
+    Returns {"audio_dir": abs path, "by_ref": {ref: {"file", "start"}},
+    "chapters": {audio file: [{"ref", "start", "end"}, ...]}} — or None when
+    the manifest, all sidecars, or all audio files are missing (the audio UI
+    then stays hidden, same degradation pattern as missing graded CSVs).
+    """
+    manifest_path = os.path.join(_HERE, manifest_path)
+    try:
+        with open(manifest_path, encoding="utf-8") as f:
+            manifest = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        log.warning("audio manifest unreadable: %s — no audio", e)
+        return None
+
+    audio_dir = os.path.normpath(os.path.join(_HERE, manifest["audio_dir"]))
+    by_ref, chapters = {}, {}
+    for entry in manifest.get("chapters", []):
+        try:
+            with open(os.path.join(_HERE, entry["sidecar"]), encoding="utf-8") as f:
+                sidecar = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            log.warning("audio sidecar unreadable (%s) — skipping chapter", e)
+            continue
+        fname = os.path.basename(sidecar["audio"])
+        if not os.path.exists(os.path.join(audio_dir, fname)):
+            log.warning("audio file missing: %s — skipping chapter", fname)
+            continue
+        verses = [
+            {"ref": v["ref"], "start": v["start"], "end": v["end"]}
+            for v in sidecar["verses"]
+        ]
+        chapters[fname] = verses
+        for v in verses:
+            by_ref[v["ref"]] = {"file": fname, "start": v["start"]}
+    return {"audio_dir": audio_dir, "by_ref": by_ref, "chapters": chapters} if by_ref else None
+
+
 def load_bibles():
     """Load Bible configs from bibles.toml; fallback to GRADED_CSV env var."""
     bibles = {}
@@ -89,6 +130,11 @@ def load_bibles():
                     "lang": entry.get("lang", "en"),
                     "df": df,
                     "df_ord": df_ord,
+                    "audio": (
+                        load_audio_manifest(entry["audio_manifest"])
+                        if "audio_manifest" in entry
+                        else None
+                    ),
                 }
                 log.info("Loaded bible %r (%d verses)", bid, df.height)
             except FileNotFoundError:
@@ -107,6 +153,7 @@ def load_bibles():
                 "lang": "en",
                 "df": df,
                 "df_ord": df_ord,
+                "audio": None,
             }
             log.info("Loaded fallback NASB from %s (%d verses)", GRADED_CSV, df.height)
         except Exception as e:
@@ -125,6 +172,7 @@ if not BIBLES:
     )
 
 DEFAULT_BIBLE = next(iter(BIBLES))
+HAS_AUDIO = any(b["audio"] for b in BIBLES.values())
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +247,19 @@ def health():
     return "ok", 200
 
 
+@server.route("/audio/<bible_id>/<path:filename>")
+def audio_file(bible_id, filename):
+    """Serve chapter audio for bibles that have an audio manifest (P10.2).
+
+    send_from_directory rejects path traversal and honors Range requests
+    (conditional=True), which <audio> seeking depends on.
+    """
+    audio = (BIBLES.get(bible_id) or {}).get("audio")
+    if not audio:
+        return "not found", 404
+    return send_from_directory(audio["audio_dir"], filename, conditional=True)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -221,6 +282,7 @@ def to_records(frame, read_refs):
     dicts = frame.select(cols).to_dicts()
     for row in dicts:
         row["read"] = "✓" if row["ref"] in read_refs else ""
+        row["id"] = row["ref"]  # row_id in active_cell: audio click-to-seek
     return dicts
 
 
@@ -229,6 +291,26 @@ def to_records(frame, read_refs):
 # ---------------------------------------------------------------------------
 
 bible_options = [{"label": v["name"], "value": k} for k, v in BIBLES.items()]
+
+# Audio player (P10.2): only in the layout when at least one bible has audio,
+# so bibles without it get a byte-identical UI. `audio-chapter` carries the
+# clicked verse's chapter (src/seek/timings) to the clientside seek callback;
+# `audio-now` is written by assets/audio.js on timeupdate and drives the
+# currently-read row highlight.
+audio_layout = (
+    [
+        html.Div(
+            id="audio-panel",
+            style={"display": "none"},
+            children=[html.Audio(id="audio-player", controls=True, style={"width": "100%"})],
+        ),
+        dcc.Store(id="audio-chapter"),
+        dcc.Store(id="audio-now"),
+        html.Div(id="audio-dummy", style={"display": "none"}),
+    ]
+    if HAS_AUDIO
+    else []
+)
 
 app.layout = html.Div(
     style={"maxWidth": "900px", "margin": "0 auto", "fontFamily": "sans-serif"},
@@ -306,6 +388,7 @@ app.layout = html.Div(
                 {"if": {"column_id": "read"}, "textAlign": "center", "width": "5%"},
             ],
         ),
+        *audio_layout,
         html.Div(
             style={"display": "flex", "gap": "0.5rem", "margin": "0.75rem 0"},
             children=[
@@ -492,6 +575,92 @@ def find_passage(n_clicks, bible_id):
         html.Pre(passage_text, style=pre_style),
     ]
     return children, panel_style
+
+
+# ---------------------------------------------------------------------------
+# Audio playback (P10.2) — callbacks exist only when some bible has audio, so
+# the app is unchanged otherwise.
+# ---------------------------------------------------------------------------
+
+def audio_for_click(bible_id, row_ref):
+    """Chapter payload for a clicked verse: {"src", "seek", "verses"} or None
+    (bible has no audio, or this verse has no aligned chapter)."""
+    audio = (BIBLES.get(bible_id) or {}).get("audio")
+    if not audio or not row_ref:
+        return None
+    hit = audio["by_ref"].get(row_ref)
+    if hit is None:
+        return None
+    return {
+        "src": f"/audio/{bible_id}/{hit['file']}",
+        "seek": hit["start"],
+        "verses": audio["chapters"][hit["file"]],
+    }
+
+
+if HAS_AUDIO:
+
+    @app.callback(
+        Output("audio-chapter", "data"),
+        Output("audio-panel", "style"),
+        Input("table", "active_cell"),
+        Input("bible-select", "value"),
+        prevent_initial_call=True,
+    )
+    def audio_on_click(active_cell, bible_id):
+        has_audio = bool((BIBLES.get(bible_id) or {}).get("audio"))
+        style = {"margin": "0.75rem 0"} if has_audio else {"display": "none"}
+        if ctx.triggered_id == "bible-select":
+            return None, style  # clear stale chapter on bible switch
+        chapter = audio_for_click(bible_id, (active_cell or {}).get("row_id"))
+        return (chapter, style) if chapter else (no_update, style)
+
+    # Seeking must not round-trip to the server: set src (if changed), wait for
+    # metadata, then jump to the verse start. The chapter's verse timings are
+    # parked on window for assets/audio.js's timeupdate highlighter.
+    app.clientside_callback(
+        """
+        function(chapter) {
+            const el = document.getElementById("audio-player");
+            if (!el) return window.dash_clientside.no_update;
+            window._bibleAudioVerses = chapter ? chapter.verses : null;
+            if (!chapter) {
+                el.pause();
+                el.removeAttribute("src");
+                return "";
+            }
+            const seek = () => { el.currentTime = chapter.seek; el.play(); };
+            if (el.getAttribute("src") !== chapter.src) {
+                el.setAttribute("src", chapter.src);
+                el.addEventListener("loadedmetadata", seek, {once: true});
+                el.load();
+            } else {
+                seek();
+            }
+            return "";
+        }
+        """,
+        Output("audio-dummy", "children"),
+        Input("audio-chapter", "data"),
+        prevent_initial_call=True,
+    )
+
+    # Highlight the verse currently being read (audio-now is set by
+    # assets/audio.js). Ref strings never contain quotes.
+    app.clientside_callback(
+        """
+        function(ref) {
+            if (!ref) return [];
+            return [{
+                "if": {"filter_query": '{ref} = "' + ref + '"'},
+                "backgroundColor": "#fff3b0"
+            }];
+        }
+        """,
+        Output("table", "style_data_conditional"),
+        Input("audio-now", "data"),
+        prevent_initial_call=True,
+    )
 
 
 # ---------------------------------------------------------------------------

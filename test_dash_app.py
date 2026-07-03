@@ -149,3 +149,101 @@ def test_cell_styles_rtl_for_hebrew():
     assert he_verse["textAlign"] == "right"
     assert "direction" not in _cell_styles("en")[0]
     assert "direction" not in _cell_styles("el")[0]
+
+
+# --------------------------------------------------------------------------- #
+# Audio playback (P10.2): manifest loading, click lookup, /audio route
+# --------------------------------------------------------------------------- #
+
+import json  # noqa: E402
+
+import dash_app  # noqa: E402
+
+
+def _audio_fixture(tmp_path, with_audio_file=True):
+    """Write a D5 manifest + sidecar (+ fake opus) under tmp_path; return the
+    manifest path (absolute paths inside, so _HERE-joining is a no-op)."""
+    serve = tmp_path / "serve"
+    serve.mkdir(exist_ok=True)
+    if with_audio_file:
+        (serve / "Gen_001.opus").write_bytes(b"OpusHead-fake")
+    sidecar = tmp_path / "Gen_001.json"
+    sidecar.write_text(json.dumps({
+        "bible_id": "wlc", "book": "Gen", "chapter": 1,
+        "audio": "data/audio/serve/Gen_001.opus", "duration": 10.0,
+        "verses": [
+            {"ref": "Gen 1:1", "start": 0.5, "end": 4.0, "confidence": 0.9},
+            {"ref": "Gen 1:2", "start": 4.0, "end": 9.5, "confidence": 0.8},
+        ],
+    }))
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({
+        "bible_id": "wlc", "audio_dir": str(serve),
+        "chapters": [{"book": "Gen", "chapter": 1, "sidecar": str(sidecar)}],
+    }))
+    return str(manifest)
+
+
+def test_load_audio_manifest(tmp_path):
+    audio = dash_app.load_audio_manifest(_audio_fixture(tmp_path))
+    assert audio["by_ref"]["Gen 1:2"] == {"file": "Gen_001.opus", "start": 4.0}
+    assert [v["ref"] for v in audio["chapters"]["Gen_001.opus"]] == ["Gen 1:1", "Gen 1:2"]
+
+
+def test_load_audio_manifest_degrades_to_none(tmp_path):
+    assert dash_app.load_audio_manifest(str(tmp_path / "absent.json")) is None
+    # sidecar present but audio file missing -> chapter skipped -> no audio
+    assert dash_app.load_audio_manifest(_audio_fixture(tmp_path, with_audio_file=False)) is None
+
+
+def test_load_audio_manifest_skips_broken_sidecar(tmp_path):
+    manifest_path = _audio_fixture(tmp_path)
+    manifest = json.loads(open(manifest_path).read())
+    manifest["chapters"].append({"book": "Gen", "chapter": 2, "sidecar": str(tmp_path / "nope.json")})
+    open(manifest_path, "w").write(json.dumps(manifest))
+    audio = dash_app.load_audio_manifest(manifest_path)
+    assert list(audio["chapters"]) == ["Gen_001.opus"]  # good chapter survives
+
+
+def _install_audio_bible(tmp_path):
+    dash_app.BIBLES["audiotest"] = {
+        "name": "t", "lang": "he", "df": None, "df_ord": None,
+        "audio": dash_app.load_audio_manifest(_audio_fixture(tmp_path)),
+    }
+
+
+def test_audio_for_click(tmp_path):
+    _install_audio_bible(tmp_path)
+    try:
+        chapter = dash_app.audio_for_click("audiotest", "Gen 1:2")
+        assert chapter["src"] == "/audio/audiotest/Gen_001.opus"
+        assert chapter["seek"] == 4.0
+        assert len(chapter["verses"]) == 2
+        assert dash_app.audio_for_click("audiotest", "Exod 1:1") is None  # unaligned verse
+        assert dash_app.audio_for_click("nasb", "Gen 1:1") is None  # bible without audio
+        assert dash_app.audio_for_click("nope", "Gen 1:1") is None
+    finally:
+        del dash_app.BIBLES["audiotest"]
+
+
+def test_audio_route_serves_and_guards(tmp_path):
+    _install_audio_bible(tmp_path)
+    (tmp_path / "secret.txt").write_text("private")  # outside the audio dir
+    try:
+        client = dash_app.server.test_client()
+        ok = client.get("/audio/audiotest/Gen_001.opus")
+        assert ok.status_code == 200
+        assert ok.data == b"OpusHead-fake"
+        assert client.get("/audio/audiotest/../secret.txt").status_code == 404
+        assert client.get("/audio/audiotest/%2e%2e/secret.txt").status_code == 404
+        assert client.get("/audio/nasb/Gen_001.opus").status_code == 404
+        assert client.get("/audio/unknown/Gen_001.opus").status_code == 404
+    finally:
+        del dash_app.BIBLES["audiotest"]
+
+
+def test_to_records_row_id_is_ref():
+    frame = pl.DataFrame(
+        {"ref": ["Gen 1:1"], "verse": ["x"], "comprehension_rate": [1.0]}
+    )
+    assert to_records(frame, set())[0]["id"] == "Gen 1:1"
