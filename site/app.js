@@ -17,6 +17,9 @@ let order = [];               // verse indices sorted by rate desc
 let filtered = [];            // indices after filters, in `order` order
 let reads = new Set();        // read refs for current bible
 let page = 0;
+let audioIndex = null;        // {audio_base, chapters: {"Gen 1": "Gen_001.json"}} or null
+let audioChapter = null;      // sidecar of the chapter loaded in the player
+const sidecarCache = new Map();
 
 // localStorage helpers — can throw in private mode, so wrap everything.
 function loadJSON(key, fallback) {
@@ -142,7 +145,8 @@ const el = {};
 for (const id of ['bible-select', 'loading', 'vocab', 'vocab-label', 'rate-min',
   'rate-max', 'max-unknown', 'search', 'unread-only', 'find-passage',
   'export-data', 'import-data', 'import-file', 'progress', 'passage-panel',
-  'verse-body', 'prev-page', 'next-page', 'page-info', 'error']) {
+  'verse-body', 'prev-page', 'next-page', 'page-info', 'error',
+  'audio-panel', 'audio-player']) {
   el[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = document.getElementById(id);
 }
 
@@ -186,9 +190,18 @@ function renderTable() {
   body.textContent = '';
   for (const i of filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)) {
     const tr = document.createElement('tr');
+    tr.dataset.ref = bible.refs[i]; // audio highlight targets rows by ref
 
     const tdRef = document.createElement('td');
     tdRef.textContent = bible.refs[i];
+    if (audioIndex) {
+      const btn = document.createElement('button');
+      btn.className = 'play';
+      btn.textContent = '▶';
+      btn.title = 'Play this verse';
+      btn.addEventListener('click', () => playVerse(bible.refs[i]));
+      tdRef.prepend(btn);
+    }
 
     const tdVerse = document.createElement('td');
     tdVerse.textContent = bible.verses[i];
@@ -265,6 +278,71 @@ function renderPassage() {
   }
 }
 
+// ---------------------------------------------------------------- audio (P10.3)
+
+// Local-only mode: timings ship with the export (--audio); the audio files
+// themselves are resolved via audioIndex.audio_base, which only resolves when
+// the site is served locally (e.g. `python -m http.server` from the repo
+// root — file:// blocks fetch, so a local server is required). On the
+// deployed site there is no audio metadata and none of this runs.
+
+async function playVerse(ref) {
+  const chapterKey = ref.slice(0, ref.lastIndexOf(':'));
+  const file = audioIndex && audioIndex.chapters[chapterKey];
+  if (!file) return;
+  let sidecar = sidecarCache.get(file);
+  if (!sidecar) {
+    try {
+      const resp = await fetch(`data/audio/${bible.id}/${file}`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      sidecar = await resp.json();
+    } catch (e) {
+      showError(`Audio timings failed to load: ${e.message}`);
+      return;
+    }
+    sidecarCache.set(file, sidecar);
+  }
+  const v = sidecar.verses.find(v => v.ref === ref);
+  if (!v) return;
+  audioChapter = sidecar;
+  el.audioPanel.hidden = false;
+  const player = el.audioPlayer;
+  const src = audioIndex.audio_base + '/' + sidecar.audio.split('/').pop();
+  const seek = () => { player.currentTime = v.start; player.play(); };
+  if (player.getAttribute('src') !== src) {
+    player.setAttribute('src', src);
+    player.addEventListener('loadedmetadata', seek, { once: true });
+    player.load();
+  } else {
+    seek();
+  }
+}
+
+function highlightPlaying(ref) {
+  for (const tr of el.verseBody.querySelectorAll('tr.playing'))
+    if (tr.dataset.ref !== ref) tr.classList.remove('playing');
+  if (ref) {
+    const tr = el.verseBody.querySelector(`tr[data-ref="${CSS.escape(ref)}"]`);
+    if (tr) tr.classList.add('playing');
+  }
+}
+
+el.audioPlayer.addEventListener('timeupdate', () => {
+  if (!audioChapter) return;
+  const t = el.audioPlayer.currentTime;
+  const cur = audioChapter.verses.find(v => t >= v.start && t < v.end);
+  highlightPlaying(cur ? cur.ref : null);
+});
+
+el.audioPlayer.addEventListener('error', () => {
+  // Timings exist but the audio files don't (deployed site, or audio dir
+  // moved): hide the feature instead of leaving a broken player.
+  el.audioPanel.hidden = true;
+  audioIndex = null;
+  highlightPlaying(null);
+  renderTable();
+});
+
 // ---------------------------------------------------------------- data loading
 
 function langName(code) {
@@ -290,6 +368,21 @@ async function loadBible(id) {
   }
   el.loading.hidden = true;
   saveJSON('bible', bible.id);
+
+  // Audio (P10.3): the manifest entry carries an "audio" index path only when
+  // exported with --audio; a failed fetch (deployed site) hides the feature.
+  audioIndex = null;
+  audioChapter = null;
+  sidecarCache.clear();
+  el.audioPanel.hidden = true;
+  el.audioPlayer.pause();
+  el.audioPlayer.removeAttribute('src');
+  if (entry.audio) {
+    try {
+      const resp = await fetch(entry.audio);
+      if (resp.ok) audioIndex = await resp.json();
+    } catch { /* no local audio — feature stays hidden */ }
+  }
 
   // Language plumbing: stemmer + stopwords must be in place before scoring.
   currentStemmer = await stemmerFor(bible.lang);

@@ -125,3 +125,13 @@ td.read { text-align: center; }
   justify-content: center;
   margin: 1rem 0;
 }
+
+/* Local audio mode (P10.3) */
+#audio-panel audio { width: 100%; }
+button.play {
+  margin-right: 0.4rem;
+  padding: 0 0.35rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+tr.playing td { background: #fff3b0; }
