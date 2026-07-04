@@ -12,10 +12,15 @@ both streams become anchors; a longest-increasing-subsequence pass keeps the
 order-consistent subset; verse boundaries are linearly interpolated between
 anchors. Confidence = fraction of a verse's tokens heard inside its window.
 
-Usage:
+Usage (one chapter):
     python scripts/align_audio.py --bible data/wlc.txt --book 1Chr --chapter 1 \
         --transcript 1chr1_transcript.json --audio data/audio/serve/1Chr_001.m4a \
         --out out/audio/wlc/1Chr_001.json
+
+Usage (whole corpus — every transcript produced by transcribe_audio.py, plus
+the manifest that dash_app.py / export_static.py consume; resumable, existing
+sidecars are kept but still reported and listed in the manifest):
+    python scripts/align_audio.py --bible data/wlc.txt --all
 """
 import argparse
 import bisect
@@ -177,37 +182,138 @@ def chapter_verses(bible_path, book, chapter):
     return sorted(rows, key=lambda rv: int(rv[0].rsplit(":", 1)[1]))
 
 
+def verses_by_chapter(bible_path):
+    """{(book, chapter): [(ref, text)] in verse order} for the whole bible."""
+    df = load_bible(bible_path)
+    by_ch = {}
+    for ref, verse in zip(df["ref"], df["verse"]):
+        book_ch, vnum = ref.rsplit(":", 1)
+        book, ch = book_ch.rsplit(" ", 1)
+        by_ch.setdefault((book, int(ch)), []).append((int(vnum), ref, verse))
+    return {k: [(r, v) for _, r, v in sorted(rows)] for k, rows in by_ch.items()}
+
+
+def chapter_of_stem(stem):
+    """"1Chr_001" -> ("1Chr", 1); None if the stem isn't <book>_<NNN>."""
+    m = re.fullmatch(r"(.+)_(\d+)", stem)
+    return (m.group(1), int(m.group(2))) if m else None
+
+
+def transcript_words(tr):
+    return [w for seg in tr.get("segments", []) for w in seg.get("words", [])]
+
+
+def write_sidecar(path, bible_id, book, chapter, audio, duration, aligned):
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(
+            {"bible_id": bible_id, "book": book, "chapter": chapter,
+             "audio": audio, "duration": duration, "verses": aligned},
+            f, ensure_ascii=False, indent=1,
+        )
+
+
+def align_corpus(bible_path, transcripts_dir, audio_dir, out_dir, manifest_path,
+                 bible_id="wlc", floor=0.5):
+    """Align every transcript, write sidecars + manifest, print a confidence
+    report. Resumable: existing sidecars are kept, not recomputed."""
+    by_ch = verses_by_chapter(bible_path)
+    stems = sorted(
+        os.path.splitext(n)[0] for n in os.listdir(transcripts_dir)
+        if n.endswith(".json") and chapter_of_stem(os.path.splitext(n)[0])
+    )
+
+    chapters, aligned_now, by_book = [], 0, {}
+    for stem in stems:
+        book, chapter = chapter_of_stem(stem)
+        verses = by_ch.get((book, chapter))
+        if not verses:
+            print(f"  {stem}: no verses for {book} {chapter} in {bible_path} — skipping")
+            continue
+        sidecar_path = os.path.join(out_dir, f"{stem}.json")
+        if os.path.exists(sidecar_path):
+            with open(sidecar_path, encoding="utf-8") as f:
+                aligned = json.load(f)["verses"]
+        else:
+            with open(os.path.join(transcripts_dir, f"{stem}.json"), encoding="utf-8") as f:
+                words = transcript_words(json.load(f))
+            aligned = align_chapter(verses, words)
+            duration = float(words[-1]["end"]) if words else 0.0
+            audio = next(
+                (os.path.join(audio_dir, f"{stem}{ext}") for ext in (".opus", ".wav")
+                 if os.path.exists(os.path.join(audio_dir, f"{stem}{ext}"))),
+                os.path.join(audio_dir, f"{stem}.opus"),
+            )
+            write_sidecar(sidecar_path, bible_id, book, chapter, audio, duration, aligned)
+            aligned_now += 1
+        chapters.append({"book": book, "chapter": chapter, "sidecar": sidecar_path})
+        stats = by_book.setdefault(book, [0, 0.0, 0])  # verses, conf sum, flagged
+        stats[0] += len(aligned)
+        stats[1] += sum(v["confidence"] for v in aligned)
+        stats[2] += sum(v["confidence"] < floor for v in aligned)
+
+    os.makedirs(os.path.dirname(manifest_path) or ".", exist_ok=True)
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump({"bible_id": bible_id, "audio_dir": audio_dir, "chapters": chapters},
+                  f, ensure_ascii=False, indent=1)
+
+    print(f"\n{len(chapters)} chapters in manifest ({aligned_now} aligned this run) "
+          f"-> {manifest_path}")
+    total = flagged = 0
+    conf_sum = 0.0
+    for book in sorted(by_book):
+        n, s, fl = by_book[book]
+        total, conf_sum, flagged = total + n, conf_sum + s, flagged + fl
+        print(f"  {book:5} {n:4} verses, mean confidence {s / n:.2f}, {fl} below {floor}")
+    if total:
+        print(f"overall: {total} verses, mean {conf_sum / total:.2f}, "
+              f"{flagged} ({100 * flagged / total:.1f}%) below {floor}")
+    return chapters
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--bible", required=True, help="verse -- ref text file")
-    ap.add_argument("--book", required=True, help="ref book id, e.g. 1Chr")
-    ap.add_argument("--chapter", type=int, required=True)
-    ap.add_argument("--transcript", required=True, help="Whisper JSON (segments with word timestamps)")
-    ap.add_argument("--audio", required=True, help="audio path to record in the sidecar")
     ap.add_argument("--bible-id", default="wlc")
+    ap.add_argument("--all", action="store_true",
+                    help="align every transcript in --transcripts and write the manifest")
+    ap.add_argument("--transcripts", default="out/audio/transcripts")
+    ap.add_argument("--audio-dir", default="data/audio/serve")
+    ap.add_argument("--out-dir", default=None, help="default: out/audio/<bible-id>")
+    ap.add_argument("--manifest", default=None, help="default: out/audio/<bible-id>_manifest.json")
+    ap.add_argument("--book", help="ref book id, e.g. 1Chr (single-chapter mode)")
+    ap.add_argument("--chapter", type=int)
+    ap.add_argument("--transcript", help="Whisper JSON (segments with word timestamps)")
+    ap.add_argument("--audio", help="audio path to record in the sidecar")
     ap.add_argument("--duration", type=float, default=None, help="audio seconds (default: last word end)")
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--out")
     args = ap.parse_args()
 
+    if args.all:
+        align_corpus(
+            args.bible,
+            args.transcripts,
+            args.audio_dir,
+            args.out_dir or f"out/audio/{args.bible_id}",
+            args.manifest or f"out/audio/{args.bible_id}_manifest.json",
+            bible_id=args.bible_id,
+        )
+        return
+
+    if not all([args.book, args.chapter, args.transcript, args.audio, args.out]):
+        sys.exit("single-chapter mode needs --book --chapter --transcript --audio --out "
+                 "(or use --all)")
+
     with open(args.transcript, encoding="utf-8") as f:
-        tr = json.load(f)
-    words = [w for seg in tr["segments"] for w in seg.get("words", [])]
+        words = transcript_words(json.load(f))
     verses = chapter_verses(args.bible, args.book, args.chapter)
     if not verses:
         sys.exit(f"no verses found for {args.book} {args.chapter} in {args.bible}")
 
     aligned = align_chapter(verses, words, args.duration)
-    sidecar = {
-        "bible_id": args.bible_id,
-        "book": args.book,
-        "chapter": args.chapter,
-        "audio": args.audio,
-        "duration": args.duration or (float(words[-1]["end"]) if words else 0.0),
-        "verses": aligned,
-    }
-    os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
-    with open(args.out, "w", encoding="utf-8") as f:
-        json.dump(sidecar, f, ensure_ascii=False, indent=1)
+    duration = args.duration or (float(words[-1]["end"]) if words else 0.0)
+    write_sidecar(args.out, args.bible_id, args.book, args.chapter, args.audio,
+                  duration, aligned)
 
     flagged = [v for v in aligned if v["confidence"] < 0.5]
     print(f"{args.book} {args.chapter}: {len(aligned)} verses -> {args.out}")

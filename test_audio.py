@@ -120,3 +120,72 @@ def test_interp_clamps():
     assert align_audio.interp(-1, [0, 10], [0.0, 5.0]) == 0.0
     assert align_audio.interp(99, [0, 10], [0.0, 5.0]) == 5.0
     assert align_audio.interp(5, [0, 10], [0.0, 5.0]) == 2.5
+
+
+# --- align_corpus -------------------------------------------------------------
+
+def test_chapter_of_stem():
+    assert align_audio.chapter_of_stem("1Chr_001") == ("1Chr", 1)
+    assert align_audio.chapter_of_stem("Ps_150") == ("Ps", 150)
+    assert align_audio.chapter_of_stem("readme") is None
+
+
+def test_verses_by_chapter(tmp_path):
+    bible = tmp_path / "bible.txt"
+    bible.write_text(
+        "אבג דגש -- T 1:2\nהקל מנס -- T 1:1\nפרק תלם -- T 2:1\n", encoding="utf-8"
+    )
+    by_ch = align_audio.verses_by_chapter(str(bible))
+    assert [r for r, _ in by_ch[("T", 1)]] == ["T 1:1", "T 1:2"]  # verse order
+    assert [r for r, _ in by_ch[("T", 2)]] == ["T 2:1"]
+
+
+def _corpus_fixture(tmp_path):
+    bible = tmp_path / "bible.txt"
+    bible.write_text(
+        "אבג דגש -- T 1:1\nהקל מנס -- T 1:2\nפרק תלם -- T 1:3\n", encoding="utf-8"
+    )
+    transcripts = tmp_path / "transcripts"
+    transcripts.mkdir()
+    import json
+    (transcripts / "T_001.json").write_text(json.dumps(
+        {"segments": [{"words": [
+            {"word": w, "start": i, "end": i + 0.9} for i, w in enumerate(ALL_TOKENS)
+        ]}]}
+    ))
+    audio_dir = tmp_path / "serve"
+    audio_dir.mkdir()
+    (audio_dir / "T_001.opus").write_bytes(b"x")
+    return bible, transcripts, audio_dir
+
+
+def test_align_corpus_writes_sidecars_and_manifest(tmp_path, capsys):
+    import json
+    bible, transcripts, audio_dir = _corpus_fixture(tmp_path)
+    out_dir = tmp_path / "out"
+    manifest_path = tmp_path / "manifest.json"
+    chapters = align_audio.align_corpus(
+        str(bible), str(transcripts), str(audio_dir), str(out_dir),
+        str(manifest_path), bible_id="test",
+    )
+    assert [(c["book"], c["chapter"]) for c in chapters] == [("T", 1)]
+    sidecar = json.loads((out_dir / "T_001.json").read_text())
+    assert sidecar["audio"].endswith("T_001.opus")
+    assert [v["ref"] for v in sidecar["verses"]] == ["T 1:1", "T 1:2", "T 1:3"]
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest["bible_id"] == "test"
+    assert manifest["chapters"][0]["sidecar"] == str(out_dir / "T_001.json")
+    assert "overall:" in capsys.readouterr().out
+
+
+def test_align_corpus_resumes(tmp_path, capsys):
+    import json
+    bible, transcripts, audio_dir = _corpus_fixture(tmp_path)
+    out_dir = tmp_path / "out"
+    manifest_path = tmp_path / "manifest.json"
+    args = (str(bible), str(transcripts), str(audio_dir), str(out_dir), str(manifest_path))
+    align_audio.align_corpus(*args)
+    before = (out_dir / "T_001.json").stat().st_mtime_ns
+    align_audio.align_corpus(*args)
+    assert (out_dir / "T_001.json").stat().st_mtime_ns == before  # not recomputed
+    assert "(0 aligned this run)" in capsys.readouterr().out
