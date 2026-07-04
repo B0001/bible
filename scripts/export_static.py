@@ -12,8 +12,16 @@ site/data/manifest.json listing the available Bibles plus the NLTK English
 stopword list (the browser's Snowball stemmer must skip the same stopwords
 that SnowballStemmer(ignore_stopwords=True) skips, or stems won't match).
 
+With --audio (P10.3), bibles whose bibles.toml entry names an existing
+`audio_manifest` also get their per-chapter alignment sidecars copied to
+site/data/audio/<id>/ plus an index.json, and an "audio" key in the site
+manifest. Only timing JSONs are copied — never audio bytes (FCBH licensing,
+PHASE10_DESIGN.md §2); the reader resolves audio files at runtime via the
+--audio-base relative path, which only exists locally. The CI deploy runs
+without --audio, so the public site carries no audio feature at all.
+
 Usage:
-    python scripts/export_static.py [--site-dir site]
+    python scripts/export_static.py [--site-dir site] [--audio]
 """
 import argparse
 import json
@@ -62,6 +70,44 @@ def export_bible(entry, site_data_dir):
     }
 
 
+def export_audio(entry, site_data_dir, audio_base):
+    """Copy one bible's alignment sidecar JSONs (never audio bytes) into
+    site/data/audio/<id>/ and write an index.json mapping "Book Chapter" to
+    sidecar file. Returns the index path relative to the site dir, or None
+    when the entry has no (readable) audio manifest."""
+    manifest_path = entry.get("audio_manifest")
+    if not manifest_path or not os.path.exists(manifest_path):
+        return None
+    with open(manifest_path, encoding="utf-8") as f:
+        manifest = json.load(f)
+
+    out_dir = os.path.join(site_data_dir, "audio", entry["id"])
+    os.makedirs(out_dir, exist_ok=True)
+    chapters = {}
+    for ch in manifest.get("chapters", []):
+        try:
+            with open(ch["sidecar"], encoding="utf-8") as f:
+                sidecar = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            print(f"  {entry['id']}: sidecar {ch['sidecar']!r} unreadable — skipping")
+            continue
+        name = os.path.basename(ch["sidecar"])
+        # Re-serialize the parsed JSON rather than copying the file: guarantees
+        # nothing but timing data can ever land under site/ (licensing, §2).
+        with open(os.path.join(out_dir, name), "w", encoding="utf-8") as f:
+            json.dump(sidecar, f, ensure_ascii=False, separators=(",", ":"))
+        chapters[f"{sidecar['book']} {sidecar['chapter']}"] = name
+    if not chapters:
+        return None
+
+    with open(os.path.join(out_dir, "index.json"), "w", encoding="utf-8") as f:
+        json.dump({"audio_base": audio_base, "chapters": chapters},
+                  f, ensure_ascii=False, separators=(",", ":"))
+    print(f"  {entry['id']}: audio timings for {len(chapters)} chapter(s) "
+          f"(sidecars only, no audio bytes)")
+    return f"data/audio/{entry['id']}/index.json"
+
+
 def stopwords_for_langs(langs):
     """Per-language NLTK stopword lists (the sets SnowballStemmer(ignore_stopwords=True)
     leaves unstemmed) for every exported language that has one. The browser stemmer
@@ -89,6 +135,10 @@ def english_stopwords():
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--site-dir", default="site")
+    ap.add_argument("--audio", action="store_true",
+                    help="include alignment timings for local audio mode (P10.3)")
+    ap.add_argument("--audio-base", default="../data/audio/serve",
+                    help="audio file base path relative to the site root")
     args = ap.parse_args()
 
     with open("bibles.toml", "rb") as f:
@@ -101,6 +151,10 @@ def main():
     for entry in config.get("bibles", []):
         m = export_bible(entry, site_data_dir)
         if m:
+            if args.audio:
+                audio_index = export_audio(entry, site_data_dir, args.audio_base)
+                if audio_index:
+                    m["audio"] = audio_index
             manifest_bibles.append(m)
 
     from parser import SNOWBALL_LANGS

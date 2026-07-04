@@ -56,6 +56,14 @@
 
     <section id="passage-panel" class="passage" hidden></section>
 
+    <!-- Local-only audio mode (P10.3): appears when the site was exported with
+         `export_static.py --audio` AND is served locally with the audio
+         directory in place (e.g. `python -m http.server` from the repo root).
+         The deployed site ships no audio metadata, so this stays hidden. -->
+    <section id="audio-panel" hidden>
+      <audio id="audio-player" controls preload="none"></audio>
+    </section>
+
     <section>
       <table id="verse-table">
         <thead>
