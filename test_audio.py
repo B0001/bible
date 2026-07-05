@@ -80,6 +80,17 @@ def test_align_clean_chapter():
     assert all(v["confidence"] == 1.0 for v in aligned)
 
 
+def test_align_starts_non_decreasing():
+    # A stray late-timed word for an early verse must not push its start past a
+    # later verse's; starts stay monotonic and no verse ends before it begins.
+    words = _words_at([("אבג", 0), ("דגש", 9), ("הקל", 2), ("מנס", 3),
+                       ("פרק", 4), ("תלם", 5)])
+    aligned = align_audio.align_chapter(VERSES, words, duration=10.0)
+    starts = [v["start"] for v in aligned]
+    assert starts == sorted(starts)
+    assert all(v["end"] >= v["start"] for v in aligned)
+
+
 def test_align_flags_dropped_verse():
     # Whisper skipped verse 2 entirely, but the surviving words keep their true
     # positions in the audio (the narration itself has no gap).

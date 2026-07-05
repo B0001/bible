@@ -154,6 +154,11 @@ def align_chapter(verses, words, duration=None):
     for tok_i, v in enumerate(verse_of):
         first_tok.setdefault(v, tok_i)
     starts = [interp(first_tok[v], xs, ys) for v in range(len(verses))]
+    # The narrator reads verses in order, so starts must be non-decreasing;
+    # clamp out the rare backward jump a stray anchor can interpolate (~0.4%
+    # of chapters) so no verse ever ends before it begins.
+    for v in range(1, len(starts)):
+        starts[v] = max(starts[v], starts[v - 1])
     ends = starts[1:] + [duration]
 
     out = []
