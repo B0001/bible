@@ -135,3 +135,8 @@ button.play {
   cursor: pointer;
 }
 tr.playing td { background: #fff3b0; }
+
+/* Word-level karaoke (P10.4): clickable words + live highlight */
+span.w { cursor: pointer; border-radius: 3px; padding: 0 1px; }
+span.w:hover { background: #e0e0e0; }
+span.wplay { background: #ffd34d; }
