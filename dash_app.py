@@ -74,9 +74,13 @@ def load_audio_manifest(manifest_path):
     """Load a Phase 10 audio manifest and its chapter sidecar JSONs.
 
     Returns {"audio_dir": abs path, "by_ref": {ref: {"file", "start"}},
-    "chapters": {audio file: [{"ref", "start", "end"}, ...]}} — or None when
-    the manifest, all sidecars, or all audio files are missing (the audio UI
-    then stays hidden, same degradation pattern as missing graded CSVs).
+    "chapters": {audio file: [{"ref", "start", "end", "words"?}, ...]}} — or
+    None when the manifest, all sidecars, or all audio files are missing (the
+    audio UI then stays hidden, same degradation pattern as missing graded
+    CSVs). Each verse carries the sidecar's per-word timings
+    (``words: [{display, start, end, conf}]``, P10.5) when present, so the
+    clientside karaoke panel can render/seek/highlight individual words; a
+    verse lacking ``words`` degrades to the verse-only reader.
     """
     manifest_path = os.path.join(_HERE, manifest_path)
     try:
@@ -99,10 +103,12 @@ def load_audio_manifest(manifest_path):
         if not os.path.exists(os.path.join(audio_dir, fname)):
             log.warning("audio file missing: %s — skipping chapter", fname)
             continue
-        verses = [
-            {"ref": v["ref"], "start": v["start"], "end": v["end"]}
-            for v in sidecar["verses"]
-        ]
+        verses = []
+        for v in sidecar["verses"]:
+            verse = {"ref": v["ref"], "start": v["start"], "end": v["end"]}
+            if "words" in v:
+                verse["words"] = v["words"]
+            verses.append(verse)
         chapters[fname] = verses
         for v in verses:
             by_ref[v["ref"]] = {"file": fname, "start": v["start"]}
@@ -294,15 +300,28 @@ bible_options = [{"label": v["name"], "value": k} for k, v in BIBLES.items()]
 
 # Audio player (P10.2): only in the layout when at least one bible has audio,
 # so bibles without it get a byte-identical UI. `audio-chapter` carries the
-# clicked verse's chapter (src/seek/timings) to the clientside seek callback;
-# `audio-now` is written by assets/audio.js on timeupdate and drives the
-# currently-read row highlight.
+# clicked verse's chapter (src/seek/timings/words/rtl) to the clientside seek
+# callback; `audio-now` is written by assets/audio.js on timeupdate and drives
+# the currently-read row highlight. The `karaoke` panel (P10.6) is rendered
+# clientside by assets/audio.js — the DataTable can't hold interactive spans,
+# so the currently-playing verse's words appear here as clickable spans
+# (click = seek, double-click = loop that word) with a live word highlight.
 audio_layout = (
     [
         html.Div(
             id="audio-panel",
             style={"display": "none"},
-            children=[html.Audio(id="audio-player", controls=True, style={"width": "100%"})],
+            children=[
+                html.Audio(id="audio-player", controls=True, style={"width": "100%"}),
+                html.Div(
+                    id="karaoke",
+                    style={
+                        "marginTop": "0.5rem",
+                        "lineHeight": "2",
+                        "fontSize": "1.3rem",
+                    },
+                ),
+            ],
         ),
         dcc.Store(id="audio-chapter"),
         dcc.Store(id="audio-now"),
@@ -583,9 +602,14 @@ def find_passage(n_clicks, bible_id):
 # ---------------------------------------------------------------------------
 
 def audio_for_click(bible_id, row_ref):
-    """Chapter payload for a clicked verse: {"src", "seek", "verses"} or None
-    (bible has no audio, or this verse has no aligned chapter)."""
-    audio = (BIBLES.get(bible_id) or {}).get("audio")
+    """Chapter payload for a clicked verse: {"src", "seek", "verses", "rtl"} or
+    None (bible has no audio, or this verse has no aligned chapter).
+
+    ``verses`` carries each verse's per-word timings (``words``) when the
+    sidecar had them, so the clientside karaoke panel can render them; ``rtl``
+    drives the panel's text direction for Hebrew/Arabic bibles (P10.6)."""
+    bible = BIBLES.get(bible_id) or {}
+    audio = bible.get("audio")
     if not audio or not row_ref:
         return None
     hit = audio["by_ref"].get(row_ref)
@@ -595,6 +619,7 @@ def audio_for_click(bible_id, row_ref):
         "src": f"/audio/{bible_id}/{hit['file']}",
         "seek": hit["start"],
         "verses": audio["chapters"][hit["file"]],
+        "rtl": bible.get("lang") in RTL_LANGS,
     }
 
 
@@ -624,6 +649,14 @@ if HAS_AUDIO:
             const el = document.getElementById("audio-player");
             if (!el) return window.dash_clientside.no_update;
             window._bibleAudioVerses = chapter ? chapter.verses : null;
+            window._bibleAudioRtl = chapter ? !!chapter.rtl : false;
+            // Reset karaoke state (P10.6) on every chapter change / clear;
+            // the timeupdate handler re-renders the panel for the new verse.
+            window._bibleLoopWord = null;
+            window._bibleKaraokeRef = null;
+            window._bibleActiveWord = null;
+            const karaoke = document.getElementById("karaoke");
+            if (karaoke) karaoke.textContent = "";
             if (!chapter) {
                 el.pause();
                 el.removeAttribute("src");

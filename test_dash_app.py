@@ -160,21 +160,32 @@ import json  # noqa: E402
 import dash_app  # noqa: E402
 
 
-def _audio_fixture(tmp_path, with_audio_file=True):
+def _audio_fixture(tmp_path, with_audio_file=True, with_words=True):
     """Write a D5 manifest + sidecar (+ fake opus) under tmp_path; return the
-    manifest path (absolute paths inside, so _HERE-joining is a no-op)."""
+    manifest path (absolute paths inside, so _HERE-joining is a no-op).
+
+    With ``with_words`` (default) the sidecar verses also carry the P10.5
+    per-word timings the karaoke panel consumes; ``with_words=False`` exercises
+    graceful degradation to a verse-only reader."""
     serve = tmp_path / "serve"
     serve.mkdir(exist_ok=True)
     if with_audio_file:
         (serve / "Gen_001.opus").write_bytes(b"OpusHead-fake")
+    v1 = {"ref": "Gen 1:1", "start": 0.5, "end": 4.0, "confidence": 0.9}
+    v2 = {"ref": "Gen 1:2", "start": 4.0, "end": 9.5, "confidence": 0.8}
+    if with_words:
+        v1["words"] = [
+            {"display": "בְּרֵאשִׁית", "start": 0.5, "end": 2.0, "conf": 1.0},
+            {"display": "בָּרָא", "start": 2.0, "end": 4.0, "conf": 0.9},
+        ]
+        v2["words"] = [
+            {"display": "וְהָאָרֶץ", "start": 4.0, "end": 9.5, "conf": 0.8},
+        ]
     sidecar = tmp_path / "Gen_001.json"
     sidecar.write_text(json.dumps({
         "bible_id": "wlc", "book": "Gen", "chapter": 1,
         "audio": "data/audio/serve/Gen_001.opus", "duration": 10.0,
-        "verses": [
-            {"ref": "Gen 1:1", "start": 0.5, "end": 4.0, "confidence": 0.9},
-            {"ref": "Gen 1:2", "start": 4.0, "end": 9.5, "confidence": 0.8},
-        ],
+        "verses": [v1, v2],
     }))
     manifest = tmp_path / "manifest.json"
     manifest.write_text(json.dumps({
@@ -188,6 +199,24 @@ def test_load_audio_manifest(tmp_path):
     audio = dash_app.load_audio_manifest(_audio_fixture(tmp_path))
     assert audio["by_ref"]["Gen 1:2"] == {"file": "Gen_001.opus", "start": 4.0}
     assert [v["ref"] for v in audio["chapters"]["Gen_001.opus"]] == ["Gen 1:1", "Gen 1:2"]
+
+
+def test_load_audio_manifest_carries_words(tmp_path):
+    """P10.6: each verse exposes the sidecar's per-word timings for karaoke."""
+    audio = dash_app.load_audio_manifest(_audio_fixture(tmp_path))
+    v1, v2 = audio["chapters"]["Gen_001.opus"]
+    assert [w["display"] for w in v1["words"]] == ["בְּרֵאשִׁית", "בָּרָא"]
+    assert v1["words"][0]["start"] == 0.5
+    assert v1["words"][1]["end"] == 4.0
+    assert [w["display"] for w in v2["words"]] == ["וְהָאָרֶץ"]
+
+
+def test_load_audio_manifest_without_words(tmp_path):
+    """A sidecar lacking per-word timings degrades to a verse-only reader:
+    no ``words`` key is fabricated."""
+    audio = dash_app.load_audio_manifest(_audio_fixture(tmp_path, with_words=False))
+    for verse in audio["chapters"]["Gen_001.opus"]:
+        assert "words" not in verse
 
 
 def test_load_audio_manifest_degrades_to_none(tmp_path):
@@ -224,6 +253,31 @@ def test_audio_for_click(tmp_path):
         assert dash_app.audio_for_click("nope", "Gen 1:1") is None
     finally:
         del dash_app.BIBLES["audiotest"]
+
+
+def test_audio_for_click_carries_words_and_rtl(tmp_path):
+    """P10.6: the click payload carries each verse's words (for the karaoke
+    panel) and an rtl flag (Hebrew bible renders the panel right-to-left)."""
+    _install_audio_bible(tmp_path)  # lang == "he"
+    try:
+        chapter = dash_app.audio_for_click("audiotest", "Gen 1:1")
+        assert chapter["rtl"] is True
+        v1 = next(v for v in chapter["verses"] if v["ref"] == "Gen 1:1")
+        assert [w["display"] for w in v1["words"]] == ["בְּרֵאשִׁית", "בָּרָא"]
+    finally:
+        del dash_app.BIBLES["audiotest"]
+
+
+def test_audio_for_click_rtl_false_for_english(tmp_path):
+    dash_app.BIBLES["audiotest_en"] = {
+        "name": "t", "lang": "en", "df": None, "df_ord": None,
+        "audio": dash_app.load_audio_manifest(_audio_fixture(tmp_path)),
+    }
+    try:
+        chapter = dash_app.audio_for_click("audiotest_en", "Gen 1:1")
+        assert chapter["rtl"] is False
+    finally:
+        del dash_app.BIBLES["audiotest_en"]
 
 
 def test_audio_route_serves_and_guards(tmp_path):
