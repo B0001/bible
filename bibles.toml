@@ -11,8 +11,8 @@ name = "Biblical Hebrew OT (WLC)"
 lang = "he"
 graded_csv = "out/wlc_graded.csv"
 source = "data/wlc.txt"
-# Phase 10: uncomment once scripts/align_audio.py has produced alignments.
-# audio_manifest = "out/audio/wlc_manifest.json"
+# Phase 10 audio (local only; absent manifest/files degrade to no audio).
+audio_manifest = "out/audio/wlc_manifest.json"
 
 [[bibles]]
 id = "gnt"
