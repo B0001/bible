@@ -19,6 +19,8 @@ let reads = new Set();        // read refs for current bible
 let page = 0;
 let audioIndex = null;        // {audio_base, chapters: {"Gen 1": "Gen_001.json"}} or null
 let audioChapter = null;      // sidecar of the chapter loaded in the player
+let loopWord = null;          // {start, end} of a double-clicked word to loop
+let curWordSpan = null;       // currently highlighted word span (karaoke)
 const sidecarCache = new Map();
 
 // localStorage helpers — can throw in private mode, so wrap everything.
@@ -204,9 +206,9 @@ function renderTable() {
     }
 
     const tdVerse = document.createElement('td');
-    tdVerse.textContent = bible.verses[i];
     tdVerse.className = 'verse';
     if (rtl) { tdVerse.dir = 'rtl'; tdVerse.classList.add('rtl'); }
+    renderVerseCell(tdVerse, bible.refs[i], bible.verses[i]);
 
     const tdRate = document.createElement('td');
     tdRate.textContent = (rates[i] * 100).toFixed(1);
@@ -305,6 +307,7 @@ async function playVerse(ref) {
   const v = sidecar.verses.find(v => v.ref === ref);
   if (!v) return;
   audioChapter = sidecar;
+  renderTable();  // re-render so this chapter's verses show clickable word spans
   el.audioPanel.hidden = false;
   const player = el.audioPlayer;
   const src = audioIndex.audio_base + '/' + sidecar.audio.split('/').pop();
@@ -318,6 +321,34 @@ async function playVerse(ref) {
   }
 }
 
+// Render a verse cell: when the loaded chapter has word timings for this ref,
+// draw each canonical word as a clickable span (click = seek, double-click =
+// loop that word); otherwise plain text. Word spans are what make the karaoke
+// highlight and click-to-seek possible.
+function renderVerseCell(td, ref, text) {
+  td.textContent = '';
+  const v = audioChapter && audioChapter.verses.find(x => x.ref === ref);
+  if (!v || !v.words) { td.textContent = text; return; }
+  for (const w of v.words) {
+    const span = document.createElement('span');
+    span.className = 'w';
+    span.textContent = w.display;
+    span.dataset.start = w.start;
+    span.dataset.end = w.end;
+    span.addEventListener('click', () => {
+      el.audioPlayer.currentTime = w.start;
+      el.audioPlayer.play();
+    });
+    span.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      loopWord = (loopWord && loopWord.start === w.start) ? null : { start: w.start, end: w.end };
+      el.audioPlayer.currentTime = w.start;
+      el.audioPlayer.play();
+    });
+    td.append(span, document.createTextNode(' '));
+  }
+}
+
 function highlightPlaying(ref) {
   for (const tr of el.verseBody.querySelectorAll('tr.playing'))
     if (tr.dataset.ref !== ref) tr.classList.remove('playing');
@@ -327,11 +358,27 @@ function highlightPlaying(ref) {
   }
 }
 
+function highlightWord(verse, t) {
+  if (curWordSpan) { curWordSpan.classList.remove('wplay'); curWordSpan = null; }
+  if (!verse || !verse.words) return;
+  const tr = el.verseBody.querySelector(`tr[data-ref="${CSS.escape(verse.ref)}"]`);
+  if (!tr) return;
+  const spans = tr.querySelectorAll('span.w');
+  verse.words.forEach((w, k) => {
+    if (t >= w.start && t < w.end && spans[k]) {
+      spans[k].classList.add('wplay');
+      curWordSpan = spans[k];
+    }
+  });
+}
+
 el.audioPlayer.addEventListener('timeupdate', () => {
   if (!audioChapter) return;
   const t = el.audioPlayer.currentTime;
+  if (loopWord && t >= loopWord.end) { el.audioPlayer.currentTime = loopWord.start; return; }
   const cur = audioChapter.verses.find(v => t >= v.start && t < v.end);
   highlightPlaying(cur ? cur.ref : null);
+  highlightWord(cur, t);
 });
 
 el.audioPlayer.addEventListener('error', () => {
@@ -373,6 +420,8 @@ async function loadBible(id) {
   // exported with --audio; a failed fetch (deployed site) hides the feature.
   audioIndex = null;
   audioChapter = null;
+  loopWord = null;
+  curWordSpan = null;
   sidecarCache.clear();
   el.audioPanel.hidden = true;
   el.audioPlayer.pause();

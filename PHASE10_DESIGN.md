@@ -247,6 +247,22 @@ self-grades recognition, result feeds the existing `record_review()` /
 half-life model. Turns the Phase 5 SRS stack into listening comprehension
 practice. No new model — just a different prompt order in the UI.
 
+### P10.5 — Word-level karaoke (done 2026-07-05)
+
+Prompted by an alternate spec (`~/Downloads/files0.zip`, "Mikra Sync"), the
+alignment now also emits **per-word** timings on demand: `align_audio.py
+--words` interpolates a time for every canonical WLC word (not just the
+verse-first token) through the same anchor correspondence and pairs each with
+its fully-pointed display form. Whitespace words map 1:1 to tokens (verified on
+174k words), maqqef compounds included. Anchor words carry an exact ASR time
+(conf 1.0); interpolated words inherit their verse confidence. Corpus regen:
+269,879 words, 0 non-monotonic, 0 out-of-bounds, 29.6% anchored. Sidecars gain
+an optional `words: [{display, start, end, conf}]` per verse (verse-level
+schema unchanged; absent `words` degrades to the verse-only reader). The static
+reader renders each word as a clickable span: **click = seek**, **double-click
+= loop that word** (drill mode), with a live word highlight while playing. This
+supersedes design §8's "word-level as opportunistic only" for the OT corpus.
+
 ## 7. Costs and storage
 
 | Item | Size / cost |
