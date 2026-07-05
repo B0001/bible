@@ -146,7 +146,13 @@ def transcribe(path, provider, api_key, timeout=600):
     req = urllib.request.Request(
         cfg["url"],
         data=body,
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": content_type},
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": content_type,
+            # Groq/OpenAI sit behind Cloudflare, which 403s (error 1010) the
+            # default "Python-urllib/x" agent; any real UA passes.
+            "User-Agent": "bible-reader/1.0",
+        },
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
