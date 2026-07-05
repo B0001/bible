@@ -42,15 +42,19 @@ def skeleton(token: str) -> str:
 
 
 def verse_token_stream(verses):
-    """Flatten [(ref, text)] into a skeleton list plus each token's verse index."""
-    skels, verse_of = [], []
+    """Flatten [(ref, text)] into parallel lists: skeleton, the token's verse
+    index, and the fully-pointed display word it came from (whitespace-split;
+    for WLC this pairs 1:1 with tokens, maqqef compounds included)."""
+    skels, verse_of, display = [], [], []
     for i, (_, text) in enumerate(verses):
-        for tok in tokenize(text, "he"):
-            s = skeleton(tok)
-            if s:
-                skels.append(s)
-                verse_of.append(i)
-    return skels, verse_of
+        for word in text.split():
+            for tok in tokenize(word, "he"):
+                s = skeleton(tok)
+                if s:
+                    skels.append(s)
+                    verse_of.append(i)
+                    display.append(word)
+    return skels, verse_of, display
 
 
 def asr_token_stream(words):
@@ -116,13 +120,26 @@ def interp(x, xs, ys):
     return y0 if x1 == x0 else y0 + (y1 - y0) * (x - x0) / (x1 - x0)
 
 
-def align_chapter(verses, words, duration=None):
+def _clamp_non_decreasing(xs):
+    """In-place: the narrator reads in order, so times can't go backwards;
+    clamp out the rare backward jump a stray anchor can interpolate."""
+    for i in range(1, len(xs)):
+        xs[i] = max(xs[i], xs[i - 1])
+    return xs
+
+
+def align_chapter(verses, words, duration=None, word_level=False):
     """Per-verse [{ref, start, end, confidence}] for one chapter.
 
     verses: [(ref, text)]; words: Whisper word dicts; duration: audio length
-    in seconds (defaults to the last word's end).
+    in seconds (defaults to the last word's end). With ``word_level=True``,
+    each verse also gets a ``words`` list of {display, start, end, conf} — the
+    canonical WLC words timed by interpolating every token (not just the
+    verse-first one) through the same anchor correspondence; anchor words carry
+    an exact ASR time (conf 1.0), interpolated words inherit their verse's
+    confidence.
     """
-    verse_skels, verse_of = verse_token_stream(verses)
+    verse_skels, verse_of, display = verse_token_stream(verses)
     asr = asr_token_stream(words)
     if not verse_skels or not asr:
         return []
@@ -132,10 +149,19 @@ def align_chapter(verses, words, duration=None):
         verse_skels, [s for s, _, _ in asr], times=[t for _, t, _ in asr], duration=duration
     )
     if not anchors:
-        return [
+        out = [
             {"ref": ref, "start": 0.0, "end": round(duration, 2), "confidence": 0.0}
             for ref, _ in verses
         ]
+        if word_level:
+            for v, row in enumerate(out):
+                row["words"] = [
+                    {"display": display[i], "start": 0.0,
+                     "end": round(duration, 2), "conf": 0.0}
+                    for i, vv in enumerate(verse_of) if vv == v
+                ]
+        return out
+    anchor_pos = {vi for vi, _ in anchors}
     xs = [vi for vi, _ in anchors]
     ys = [asr[ai][1] for _, ai in anchors]
     # Synthetic boundary anchors: spread unanchored leading/trailing verses
@@ -148,17 +174,15 @@ def align_chapter(verses, words, duration=None):
         xs.append(len(verse_skels) - 1)
         ys.append(duration)
 
-    # Verse boundary = interpolated time of its first token; a verse ends where
-    # the next begins (the narrator reads continuously).
+    # Time of every token's first read; each token ends where the next begins.
+    tok_starts = _clamp_non_decreasing([interp(t, xs, ys) for t in range(len(verse_skels))])
+    tok_ends = tok_starts[1:] + [duration]
+    # Verse boundary = its first token's start (a verse ends where the next
+    # begins), computed from the same token times so word/verse edges agree.
     first_tok = {}
     for tok_i, v in enumerate(verse_of):
         first_tok.setdefault(v, tok_i)
-    starts = [interp(first_tok[v], xs, ys) for v in range(len(verses))]
-    # The narrator reads verses in order, so starts must be non-decreasing;
-    # clamp out the rare backward jump a stray anchor can interpolate (~0.4%
-    # of chapters) so no verse ever ends before it begins.
-    for v in range(1, len(starts)):
-        starts[v] = max(starts[v], starts[v - 1])
+    starts = [tok_starts[first_tok[v]] for v in range(len(verses))]
     ends = starts[1:] + [duration]
 
     out = []
@@ -167,16 +191,23 @@ def align_chapter(verses, words, duration=None):
         lo = bisect.bisect_left(asr_starts, starts[v] - 0.01)
         hi = bisect.bisect_left(asr_starts, ends[v])
         heard = {s for s, _, _ in asr[lo:hi]}
-        mine = [verse_skels[i] for i, vv in enumerate(verse_of) if vv == v]
-        conf = sum(s in heard for s in mine) / len(mine) if mine else 0.0
-        out.append(
-            {
-                "ref": ref,
-                "start": round(starts[v], 2),
-                "end": round(ends[v], 2),
-                "confidence": round(conf, 2),
-            }
-        )
+        idxs = [i for i, vv in enumerate(verse_of) if vv == v]
+        conf = sum(verse_skels[i] in heard for i in idxs) / len(idxs) if idxs else 0.0
+        row = {
+            "ref": ref,
+            "start": round(starts[v], 2),
+            "end": round(ends[v], 2),
+            "confidence": round(conf, 2),
+        }
+        if word_level:
+            row["words"] = [
+                {"display": display[i],
+                 "start": round(tok_starts[i], 2),
+                 "end": round(tok_ends[i], 2),
+                 "conf": 1.0 if i in anchor_pos else round(conf, 2)}
+                for i in idxs
+            ]
+        out.append(row)
     return out
 
 
@@ -219,7 +250,7 @@ def write_sidecar(path, bible_id, book, chapter, audio, duration, aligned):
 
 
 def align_corpus(bible_path, transcripts_dir, audio_dir, out_dir, manifest_path,
-                 bible_id="wlc", floor=0.5):
+                 bible_id="wlc", floor=0.5, word_level=False):
     """Align every transcript, write sidecars + manifest, print a confidence
     report. Resumable: existing sidecars are kept, not recomputed."""
     by_ch = verses_by_chapter(bible_path)
@@ -242,7 +273,7 @@ def align_corpus(bible_path, transcripts_dir, audio_dir, out_dir, manifest_path,
         else:
             with open(os.path.join(transcripts_dir, f"{stem}.json"), encoding="utf-8") as f:
                 words = transcript_words(json.load(f))
-            aligned = align_chapter(verses, words)
+            aligned = align_chapter(verses, words, word_level=word_level)
             duration = float(words[-1]["end"]) if words else 0.0
             audio = next(
                 (os.path.join(audio_dir, f"{stem}{ext}") for ext in (".opus", ".wav")
@@ -291,6 +322,8 @@ def main():
     ap.add_argument("--transcript", help="Whisper JSON (segments with word timestamps)")
     ap.add_argument("--audio", help="audio path to record in the sidecar")
     ap.add_argument("--duration", type=float, default=None, help="audio seconds (default: last word end)")
+    ap.add_argument("--words", action="store_true",
+                    help="also emit per-word timings (karaoke); enlarges sidecars")
     ap.add_argument("--out")
     args = ap.parse_args()
 
@@ -302,6 +335,7 @@ def main():
             args.out_dir or f"out/audio/{args.bible_id}",
             args.manifest or f"out/audio/{args.bible_id}_manifest.json",
             bible_id=args.bible_id,
+            word_level=args.words,
         )
         return
 
@@ -315,7 +349,7 @@ def main():
     if not verses:
         sys.exit(f"no verses found for {args.book} {args.chapter} in {args.bible}")
 
-    aligned = align_chapter(verses, words, args.duration)
+    aligned = align_chapter(verses, words, args.duration, word_level=args.words)
     duration = args.duration or (float(words[-1]["end"]) if words else 0.0)
     write_sidecar(args.out, args.bible_id, args.book, args.chapter, args.audio,
                   duration, aligned)

@@ -91,6 +91,35 @@ def test_align_starts_non_decreasing():
     assert all(v["end"] >= v["start"] for v in aligned)
 
 
+def test_verse_token_stream_display_forms():
+    # display forms are the fully-pointed whitespace words, 1:1 with tokens
+    skels, verse_of, display = align_audio.verse_token_stream(VERSES)
+    assert len(skels) == len(verse_of) == len(display) == 6
+    assert display[:2] == ["אבג", "דגש"]
+    assert verse_of == [0, 0, 1, 1, 2, 2]
+
+
+def test_align_word_level():
+    aligned = align_audio.align_chapter(VERSES, _words(ALL_TOKENS), duration=6.0,
+                                        word_level=True)
+    v1 = aligned[0]
+    assert [w["display"] for w in v1["words"]] == ["אבג", "דגש"]
+    # per-word times monotonic across the whole chapter, inside [0, duration]
+    all_words = [w for v in aligned for w in v["words"]]
+    starts = [w["start"] for w in all_words]
+    assert starts == sorted(starts)
+    assert all(0.0 <= w["start"] <= w["end"] <= 6.0 for w in all_words)
+    # first word of a verse starts exactly at the verse start
+    assert v1["words"][0]["start"] == v1["start"]
+    # every token is a unique anchor here, so all words get an exact time
+    assert all(w["conf"] == 1.0 for w in all_words)
+
+
+def test_align_verse_level_has_no_words_key():
+    aligned = align_audio.align_chapter(VERSES, _words(ALL_TOKENS), duration=6.0)
+    assert all("words" not in v for v in aligned)
+
+
 def test_align_flags_dropped_verse():
     # Whisper skipped verse 2 entirely, but the surviving words keep their true
     # positions in the audio (the narration itself has no gap).
