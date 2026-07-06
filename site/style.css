@@ -138,5 +138,18 @@ tr.playing td { background: #fff3b0; }
 
 /* Word-level karaoke (P10.4): clickable words + live highlight */
 span.w { cursor: pointer; border-radius: 3px; padding: 0 1px; }
-span.w:hover { background: #e0e0e0; }
-span.wplay { background: #ffd34d; }
+/* hover/play use outline so they stay visible over an inline heatmap bg (P10.7) */
+span.w:hover { outline: 1px solid #9ab; }
+span.wplay { outline: 2px solid #f5a623; background: #ffd34d; }
+
+/* Pause marker (P10.7): vertical divider at long inter-word gaps; inline-block
+   with symmetric margins flows in both LTR and RTL. */
+span.pause {
+  display: inline-block;
+  width: 0;
+  height: 0.9em;
+  vertical-align: middle;
+  border-left: 2px solid #c0392b;
+  opacity: 0.55;
+  margin: 0 0.15em;
+}
