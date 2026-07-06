@@ -6,6 +6,8 @@
 
 const PAGE_SIZE = 20;
 const PASSAGE_RATE = 0.95;
+const PAUSE_THRESHOLD = 0.8;  // s; inter-word gap that marks a breathing point (P10.7)
+const HEATMAP_CAP = 2;        // word duration >= CAP x chapter median = full intensity
 
 let manifest = null;          // manifest.json content
 let bible = null;             // current bible: {id, name, lang, refs, verses, tokens}
@@ -21,6 +23,9 @@ let audioIndex = null;        // {audio_base, chapters: {"Gen 1": "Gen_001.json"
 let audioChapter = null;      // sidecar of the chapter loaded in the player
 let loopWord = null;          // {start, end} of a double-clicked word to loop
 let curWordSpan = null;       // currently highlighted word span (karaoke)
+let chapterMedian = 0;        // median word duration for the loaded chapter (heatmap)
+let heatmapOn = loadJSON('audio:heatmap', false);  // P10.7 analytics toggles
+let pausesOn = loadJSON('audio:pauses', false);
 const sidecarCache = new Map();
 
 // localStorage helpers — can throw in private mode, so wrap everything.
@@ -148,7 +153,7 @@ for (const id of ['bible-select', 'loading', 'vocab', 'vocab-label', 'rate-min',
   'rate-max', 'max-unknown', 'search', 'unread-only', 'find-passage',
   'export-data', 'import-data', 'import-file', 'progress', 'passage-panel',
   'verse-body', 'prev-page', 'next-page', 'page-info', 'error',
-  'audio-panel', 'audio-player']) {
+  'audio-panel', 'audio-player', 'heatmap-toggle', 'pauses-toggle']) {
   el[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = document.getElementById(id);
 }
 
@@ -307,6 +312,7 @@ async function playVerse(ref) {
   const v = sidecar.verses.find(v => v.ref === ref);
   if (!v) return;
   audioChapter = sidecar;
+  chapterMedian = medianDuration(sidecar.verses.flatMap(x => x.words || []));
   renderTable();  // re-render so this chapter's verses show clickable word spans
   el.audioPanel.hidden = false;
   const player = el.audioPlayer;
@@ -329,12 +335,18 @@ function renderVerseCell(td, ref, text) {
   td.textContent = '';
   const v = audioChapter && audioChapter.verses.find(x => x.ref === ref);
   if (!v || !v.words) { td.textContent = text; return; }
-  for (const w of v.words) {
+  v.words.forEach((w, k) => {
     const span = document.createElement('span');
     span.className = 'w';
     span.textContent = w.display;
     span.dataset.start = w.start;
     span.dataset.end = w.end;
+    // Emphasis heatmap (P10.7): background intensity ~ word duration vs the
+    // chapter median; CAP x median = full intensity, clamped to [0, 1].
+    if (heatmapOn && chapterMedian > 0) {
+      const a = Math.min(1, Math.max(0, (w.end - w.start) / (HEATMAP_CAP * chapterMedian)));
+      span.style.backgroundColor = `rgba(255,120,0,${a.toFixed(3)})`;
+    }
     span.addEventListener('click', () => {
       el.audioPlayer.currentTime = w.start;
       el.audioPlayer.play();
@@ -346,7 +358,24 @@ function renderVerseCell(td, ref, text) {
       el.audioPlayer.play();
     });
     td.append(span, document.createTextNode(' '));
-  }
+    // Pause marker (P10.7): a divider where the gap to the next word exceeds
+    // the breathing-point threshold (candidate atnach / sof-pasuq).
+    if (pausesOn && k + 1 < v.words.length &&
+        v.words[k + 1].start - w.end > PAUSE_THRESHOLD) {
+      const mark = document.createElement('span');
+      mark.className = 'pause';
+      mark.setAttribute('aria-hidden', 'true');
+      td.append(mark, document.createTextNode(' '));
+    }
+  });
+}
+
+// Median of positive word durations across [{start, end}] (for the heatmap).
+function medianDuration(words) {
+  const durs = words.map(w => w.end - w.start).filter(d => d > 0).sort((a, b) => a - b);
+  if (!durs.length) return 0;
+  const mid = Math.floor(durs.length / 2);
+  return durs.length % 2 ? durs[mid] : (durs[mid - 1] + durs[mid]) / 2;
 }
 
 function highlightPlaying(ref) {
@@ -422,6 +451,7 @@ async function loadBible(id) {
   audioChapter = null;
   loopWord = null;
   curWordSpan = null;
+  chapterMedian = 0;
   sidecarCache.clear();
   el.audioPanel.hidden = true;
   el.audioPlayer.pause();
@@ -466,6 +496,21 @@ for (const input of [el.rateMin, el.rateMax, el.maxUnknown, el.search]) {
   input.addEventListener('input', debounce(() => { page = 0; refresh(); }, 200));
 }
 el.unreadOnly.addEventListener('change', () => { page = 0; refresh(); });
+
+// Audio analytics toggles (P10.7): persist and re-render so word spans pick up
+// the heatmap background / pause markers. No-op when no chapter has word data.
+el.heatmapToggle.checked = heatmapOn;
+el.heatmapToggle.addEventListener('change', () => {
+  heatmapOn = el.heatmapToggle.checked;
+  saveJSON('audio:heatmap', heatmapOn);
+  if (bible) renderTable();
+});
+el.pausesToggle.checked = pausesOn;
+el.pausesToggle.addEventListener('change', () => {
+  pausesOn = el.pausesToggle.checked;
+  saveJSON('audio:pauses', pausesOn);
+  if (bible) renderTable();
+});
 
 el.prevPage.addEventListener('click', () => { page--; renderTable(); });
 el.nextPage.addEventListener('click', () => { page++; renderTable(); });
