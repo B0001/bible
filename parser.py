@@ -70,10 +70,10 @@ STEMMER = SnowballStemmer("english", ignore_stopwords=True)
 # stem-aware matching; he/el have dedicated mark-stripping paths below; any
 # other code falls back to plain lowercased \w+ tokens with no stemmer.
 SNOWBALL_LANGS = {
-    "ar": "arabic", "da": "danish", "de": "german", "en": "english",
-    "es": "spanish", "fi": "finnish", "fr": "french", "hu": "hungarian",
-    "it": "italian", "nl": "dutch", "no": "norwegian", "pt": "portuguese",
-    "ro": "romanian", "ru": "russian", "sv": "swedish",
+    "ar": "arabic", "de": "german", "en": "english",
+    "es": "spanish", "fr": "french",
+    "it": "italian", "nl": "dutch", "pt": "portuguese",
+    "ru": "russian",
 }
 
 _STEMMERS = {"en": STEMMER}
