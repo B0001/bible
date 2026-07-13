@@ -394,11 +394,6 @@ app.layout = html.Div(
                 "height": "auto",
                 "padding": "6px",
             },
-            style_cell_conditional=[
-                {"if": {"column_id": "verse"}, "width": "60%"},
-                {"if": {"column_id": "comprehension_%"}, "textAlign": "right"},
-                {"if": {"column_id": "read"}, "textAlign": "center", "width": "5%"},
-            ],
         ),
         *audio_layout,
         html.Div(
