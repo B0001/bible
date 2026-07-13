@@ -219,7 +219,6 @@ def test_align_corpus_writes_sidecars_and_manifest(tmp_path, capsys):
 
 
 def test_align_corpus_resumes(tmp_path, capsys):
-    import json
     bible, transcripts, audio_dir = _corpus_fixture(tmp_path)
     out_dir = tmp_path / "out"
     manifest_path = tmp_path / "manifest.json"
