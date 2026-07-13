@@ -57,7 +57,6 @@ except ImportError:
     _WORDFREQ_AVAILABLE = False
 
 try:
-    import numpy as _np
     import spacy as _spacy
     _SPACY_AVAILABLE = True
 except ImportError:
@@ -382,27 +381,17 @@ class SemanticModel:
 
     def __init__(self, nlp, profile_surface_words):
         self._nlp = nlp
-        self._known_vecs = []
-        for word in profile_surface_words:
-            doc = nlp(word.lower())
-            if doc.has_vector:
-                self._known_vecs.append(doc.vector)
+        self._known_docs = [doc for word in profile_surface_words
+                            for doc in [nlp(word.lower())]
+                            if doc.has_vector and doc.vector_norm > 0]
 
     def credit(self, surface_token):
         """Semantic credit for a surface token: ``SIM_WEIGHT * max_cosine`` if the
         best cosine similarity to any known word ≥ ``SIM_TAU``, else 0."""
         doc = self._nlp(surface_token.lower())
-        if not doc.has_vector or not self._known_vecs:
+        if not doc.has_vector or doc.vector_norm == 0 or not self._known_docs:
             return 0.0
-        token_vec = doc.vector
-        norm = _np.linalg.norm(token_vec)
-        if norm == 0.0:
-            return 0.0
-        max_sim = 0.0
-        for kv in self._known_vecs:
-            kn = _np.linalg.norm(kv)
-            if kn > 0.0:
-                max_sim = max(max_sim, float(_np.dot(token_vec, kv) / (norm * kn)))
+        max_sim = max(float(doc.similarity(kd)) for kd in self._known_docs)
         return _SIM_WEIGHT * max_sim if max_sim >= _SIM_TAU else 0.0
 
 
