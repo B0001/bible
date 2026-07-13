@@ -17,6 +17,8 @@ describes the current state.
 
 ## Architecture
 
+the audio files are in https://4.dbt.io/open-api-4.json
+
 A single-machine **polars** pipeline scores verses, writes a CSV, and a Dash app
 displays it. (An earlier Spark implementation, `parser.scala`, was removed — see
 SPEC.md §4; the dataset fits in memory so no cluster is needed.)
