@@ -127,11 +127,6 @@ def stopwords_for_langs(langs):
     return out
 
 
-def english_stopwords():
-    """Backward-compat helper (see stopwords_for_langs)."""
-    return stopwords_for_langs(["en"])["en"]
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--site-dir", default="site")
@@ -170,7 +165,6 @@ def main():
             for lang in sorted(set(langs))
         },
         "rtl": ["he", "ar"],
-        "en_stopwords": english_stopwords(),
     }
     manifest_path = os.path.join(site_data_dir, "manifest.json")
     with open(manifest_path, "w", encoding="utf-8") as f:

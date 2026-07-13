@@ -55,7 +55,7 @@ def test_manifest_stopwords_match_nltk():
     mod = _load_export_module()
     from nltk.corpus import stopwords
 
-    assert set(mod.english_stopwords()) == set(stopwords.words("english"))
+    assert set(mod.stopwords_for_langs(["en"])["en"]) == set(stopwords.words("english"))
 
 
 # --------------------------------------------------------------------------- #
