@@ -699,21 +699,13 @@ def study_queue(bible_df, profile, now, known_rate=0.95, review_p=_REVIEW_P, min
 
 @contextmanager
 def _open_write(path):
-    """Open a local or s3:// path for binary writing; create local parent dirs."""
-    if path.startswith("s3://"):
-        try:
-            import fsspec
-        except ImportError:
-            raise ImportError("pip install 'bible-reader[s3]' to write to S3") from None
-        with fsspec.open(path, "wb") as f:
-            yield f
-    else:
-        expanded = os.path.expanduser(path)
-        d = os.path.dirname(expanded)
-        if d:
-            os.makedirs(d, exist_ok=True)
-        with open(expanded, "wb") as f:
-            yield f
+    """Open a path for binary writing; create parent dirs."""
+    expanded = os.path.expanduser(path)
+    d = os.path.dirname(expanded)
+    if d:
+        os.makedirs(d, exist_ok=True)
+    with open(expanded, "wb") as f:
+        yield f
 
 
 def main():

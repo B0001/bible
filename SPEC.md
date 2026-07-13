@@ -308,5 +308,4 @@ the Phase 5 SRS model (P10.4). This retires the old BibleGateway-scraping
 None outstanding.
 
 _Resolved:_ single-machine **polars** pipeline (Spark dropped); **stem/lemma-aware**
-matching (Snowball) is canonical; sample data (`sample/`) ships in the repo; output
-paths accept `s3://` URIs (`pip install '.[s3]'` for `s3fs`).
+matching (Snowball) is canonical; sample data (`sample/`) ships in the repo.

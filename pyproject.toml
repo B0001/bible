@@ -21,7 +21,6 @@ dev = [
 ]
 lexical = ["wordfreq>=3"]
 semantic = ["spacy>=3"]
-s3 = ["s3fs>=2023.6"]
 
 # Anchor pytest's rootdir here so it does not climb into a parent directory and
 # load an unrelated conftest.py. importmode=importlib keeps test modules isolated.
