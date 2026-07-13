@@ -115,3 +115,4 @@ reads.db
 
 # generated static-site data (built by scripts/export_static.py)
 site/data/
+english_poset_vocabulary.json
