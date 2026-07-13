@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from parser import stem_tokens, tokenize_and_stem
+from parser import tokenize_and_stem
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -110,7 +110,7 @@ def test_stopword_skip_reproduces_ignore_stopwords():
     sw = set(stopwords.words("english"))
     # "was" is a stopword: ignore_stopwords keeps it verbatim
     assert "was" in sw
-    assert stem_tokens("was")[0] == "was"
+    assert tokenize_and_stem("was", "en")[0] == "was"
     # "running" is not: it must be stemmed
     assert "running" not in sw
-    assert stem_tokens("running")[0] == "run"
+    assert tokenize_and_stem("running", "en")[0] == "run"
