@@ -8,7 +8,6 @@ import pytest
 from parser import (
     SemanticModel,
     comprehension_rate,
-    grade,
     grade_longest_passage,
     grade_passages,
     half_life,
@@ -19,7 +18,6 @@ from parser import (
     next_words_to_learn,
     recall_prob,
     record_review,
-    stem_tokens,
     study_queue,
     tokenize,
     tokenize_and_stem,
@@ -122,35 +120,35 @@ def test_comprehension_rate_spanish_stem_variant():
 
 def test_english_default_lang_unchanged():
     # Existing English behavior is unaffected by the lang parameter default
-    vocab = set(stem_tokens("the cat sat"))
+    vocab = set(tokenize_and_stem("the cat sat", "en"))
     assert comprehension_rate("the cat sat", vocab) == 1.0
     assert comprehension_rate("the cat sat", vocab, lang="en") == 1.0
 
 
 def test_all_known_is_one():
-    vocab = set(stem_tokens("the cat sat"))
+    vocab = set(tokenize_and_stem("the cat sat", "en"))
     assert comprehension_rate("the cat sat", vocab) == 1.0
 
 
 def test_none_known_is_zero():
-    vocab = set(stem_tokens("alpha beta"))
+    vocab = set(tokenize_and_stem("alpha beta", "en"))
     assert comprehension_rate("the cat sat", vocab) == 0.0
 
 
 def test_partial_rate():
-    vocab = set(stem_tokens("the cat"))
+    vocab = set(tokenize_and_stem("the cat", "en"))
     # "the", "cat" known of "the cat sat" -> 2/3
     assert comprehension_rate("the cat sat", vocab) == 2 / 3
 
 
 def test_empty_verse_scores_zero():
-    vocab = set(stem_tokens("the cat"))
+    vocab = set(tokenize_and_stem("the cat", "en"))
     assert comprehension_rate("", vocab) == 0.0
     assert comprehension_rate("!!! ???", vocab) == 0.0
 
 
 def test_min_verse_length_guard():
-    vocab = set(stem_tokens("the cat"))
+    vocab = set(tokenize_and_stem("the cat", "en"))
     # one token, but threshold of 2 -> treated as too short
     assert comprehension_rate("cat", vocab, min_verse_length=2) == 0.0
 
@@ -167,22 +165,21 @@ def test_grade_passages_rejects_nonpositive_window():
 
 
 def test_case_insensitive():
-    vocab = set(stem_tokens("the cat"))
+    vocab = set(tokenize_and_stem("the cat", "en"))
     assert comprehension_rate("THE CAT", vocab) == 1.0
 
 
 def test_stem_variant_counts_as_known():
     # vocab "run" should mark morphological variants as known
-    vocab = set(stem_tokens("run"))
+    vocab = set(tokenize_and_stem("run", "en"))
     assert comprehension_rate("running", vocab) == 1.0
     assert comprehension_rate("she runs and ran", vocab) > 0.0
 
 
-def test_grade_adds_column():
-    df = pl.DataFrame({"verse": ["the cat sat"], "ref": ["Test 1:1"]})
-    vocab = set(stem_tokens("the cat sat"))
-    out = grade(df, vocab)
-    assert out["comprehension_rate"][0] == 1.0
+def test_comprehension_rate_simple():
+    # comprehension_rate returns 1.0 when all words are known
+    vocab = set(tokenize_and_stem("the cat sat", "en"))
+    assert comprehension_rate("the cat sat", vocab) == 1.0
 
 
 def test_load_bible_skips_malformed_lines(tmp_path):
@@ -200,7 +197,7 @@ def test_grade_passages_slides_one_verse_at_a_time():
             "ref": ["Gen 1:1", "Gen 1:2", "Gen 1:3"],
         }
     )
-    vocab = set(stem_tokens("the cat sat on mat in sun"))
+    vocab = set(tokenize_and_stem("the cat sat on mat in sun"))
     out = grade_passages(df, vocab, window=2)
     assert out.height == 2  # 3 verses, window 2 -> 2 sliding windows
     assert out["start_ref"].to_list() == ["Gen 1:1", "Gen 1:2"]
@@ -214,14 +211,14 @@ def test_grade_passages_scores_as_one_combined_unit():
     df = pl.DataFrame(
         {"verse": ["the cat", "a dog"], "ref": ["Gen 1:1", "Gen 1:2"]}
     )
-    vocab = set(stem_tokens("the cat a dog"))
+    vocab = set(tokenize_and_stem("the cat a dog"))
     out = grade_passages(df, vocab, window=2)
     assert out["comprehension_rate"][0] == 1.0
 
 
 def test_grade_passages_window_larger_than_corpus_is_empty():
     df = pl.DataFrame({"verse": ["a b"], "ref": ["Gen 1:1"]})
-    vocab = set(stem_tokens("a b"))
+    vocab = set(tokenize_and_stem("a b"))
     out = grade_passages(df, vocab, window=5)
     assert out.height == 0
 
@@ -233,13 +230,13 @@ def test_next_words_to_learn_unlocks_single_missing_word():
             "ref": ["a", "b", "c"],
         }
     )
-    vocab = set(stem_tokens("the cat sat ran"))
+    vocab = set(tokenize_and_stem("the cat sat ran"))
     # "the cat sat": fully known, already above threshold, excluded.
     # "the dog ran": 2/3 known; learning "dog" alone -> 3/3 -> unlocked.
     # "the dog ran again": 2/4 known; "dog" or "again" alone only reaches 3/4 -> not unlocked.
     out = next_words_to_learn(df, vocab, known_rate=0.95)
     assert out.height == 1
-    assert out["stem"].to_list() == stem_tokens("dog")
+    assert out["stem"].to_list() == tokenize_and_stem("dog")
     assert out["verses_unlocked"].to_list() == [1]
 
 
@@ -250,9 +247,9 @@ def test_next_words_to_learn_orders_most_unlocks_first():
             "ref": ["a", "b", "c"],
         }
     )
-    vocab = set(stem_tokens("see the look at"))
+    vocab = set(tokenize_and_stem("see the look at"))
     out = next_words_to_learn(df, vocab, known_rate=0.95)
-    assert out["stem"].to_list() == [stem_tokens("cat")[0], stem_tokens("dog")[0]]
+    assert out["stem"].to_list() == [tokenize_and_stem("cat")[0], tokenize_and_stem("dog")[0]]
     assert out["verses_unlocked"].to_list() == [2, 1]
 
 
@@ -263,10 +260,10 @@ def test_next_words_to_learn_respects_top_n():
             "ref": ["a", "b", "c"],
         }
     )
-    vocab = set(stem_tokens("see the look at"))
+    vocab = set(tokenize_and_stem("see the look at"))
     out = next_words_to_learn(df, vocab, known_rate=0.95, top_n=1)
     assert out.height == 1
-    assert out["stem"].to_list() == [stem_tokens("cat")[0]]
+    assert out["stem"].to_list() == [tokenize_and_stem("cat")[0]]
 
 
 def test_update_vocab_file_appends_new_words(tmp_path):
@@ -297,7 +294,7 @@ def test_update_vocab_file_persists_for_load_vocab(tmp_path):
     p.write_text("the cat\n")
     update_vocab_file(str(p), ["running"])
     # "running" should now stem-match "run" thanks to the persisted word
-    assert stem_tokens("run")[0] in load_vocab(str(p))
+    assert tokenize_and_stem("run")[0] in load_vocab(str(p))
 
 
 # --------------------------------------------------------------------------- #
@@ -313,7 +310,7 @@ def test_record_review_creates_log_and_load_profile_replays(tmp_path):
     record_review(str(p), "faith", correct=True, when=NOW)
     record_review(str(p), "faith", correct=False, when=NOW)
     profile = load_profile(str(p))
-    stem = stem_tokens("faith")[0]
+    stem = tokenize_and_stem("faith")[0]
     assert profile[stem].n_correct == 1
     assert profile[stem].n_incorrect == 1
     assert profile[stem].last_seen == NOW
@@ -324,7 +321,7 @@ def test_load_profile_includes_review_only_words(tmp_path):
     p.write_text("faith\n")  # "grace" only ever appears in the review log
     record_review(str(p), "grace", correct=True, when=NOW)
     profile = load_profile(str(p))
-    assert stem_tokens("grace")[0] in profile
+    assert tokenize_and_stem("grace")[0] in profile
 
 
 def test_half_life_grows_with_net_correct():
@@ -356,8 +353,8 @@ def test_recall_prob_unknown_and_decay_off():
 def test_weighted_rate_matches_binary_when_decay_off():
     # Backward-compatibility guarantee from PHASE5_DESIGN.md §0.3
     vocab_text = "the cat sat on"
-    p_profile = {s: __import__("parser").WordHistory() for s in stem_tokens(vocab_text)}
-    vocab = set(stem_tokens(vocab_text))
+    p_profile = {s: __import__("parser").WordHistory() for s in tokenize_and_stem(vocab_text)}
+    vocab = set(tokenize_and_stem(vocab_text))
     for verse in ["the cat sat", "the dog ran on", "!!!", "sat quietly"]:
         assert weighted_comprehension_rate(
             verse, p_profile, NOW, decay=False
@@ -384,7 +381,7 @@ def test_study_queue_schema():
 
 def test_study_queue_due_review_appears():
     """A profile word with low recall probability shows up as a 'review' item."""
-    faith_stem = stem_tokens("faith")[0]
+    faith_stem = tokenize_and_stem("faith")[0]
     profile = {faith_stem: _old_hist()}
     bible_df = pl.DataFrame({"verse": ["faith hope"], "ref": ["a"]})
 
@@ -396,7 +393,7 @@ def test_study_queue_due_review_appears():
 def test_study_queue_new_word_appears():
     """An unknown word that would unlock a verse appears as a 'learn' item."""
     # Profile knows 2 of 3 words; learning the 3rd pushes comprehension to 3/3 >= 0.95
-    known_stems = stem_tokens("the sat")
+    known_stems = tokenize_and_stem("the sat")
     profile = {s: WordHistory() for s in known_stems}
     bible_df = pl.DataFrame({"verse": ["the cat sat"], "ref": ["a"]})
 
@@ -406,7 +403,7 @@ def test_study_queue_new_word_appears():
 
 def test_study_queue_reviews_before_learns():
     """Due reviews are ordered before new-word recommendations."""
-    faith_stem = stem_tokens("faith")[0]
+    faith_stem = tokenize_and_stem("faith")[0]
     profile = {faith_stem: _old_hist()}
     bible_df = pl.DataFrame({"verse": ["the cat sat"], "ref": ["a"]})
 
@@ -420,8 +417,8 @@ def test_study_queue_reviews_before_learns():
 
 def test_study_queue_reviews_sorted_ascending_by_score():
     """Most-forgotten words (lowest recall prob) come first among review items."""
-    faith_stem = stem_tokens("faith")[0]
-    grace_stem = stem_tokens("grace")[0]
+    faith_stem = tokenize_and_stem("faith")[0]
+    grace_stem = tokenize_and_stem("grace")[0]
     profile = {
         faith_stem: WordHistory(n_correct=0, n_incorrect=3, last_seen=NOW - timedelta(days=200)),
         grace_stem: WordHistory(n_correct=0, n_incorrect=1, last_seen=NOW - timedelta(days=30)),
@@ -446,7 +443,7 @@ def test_study_queue_top_n_caps_total():
 
 def test_study_queue_empty_when_nothing_to_do():
     """Seed-only profile with complete verse coverage produces an empty queue."""
-    profile = {s: WordHistory() for s in stem_tokens("the cat sat")}
+    profile = {s: WordHistory() for s in tokenize_and_stem("the cat sat")}
     bible_df = pl.DataFrame({"verse": ["the cat sat"], "ref": ["a"]})
     # Seed words have p=1.0 (no reviews, so last_seen=None -> p=1.0), no due reviews.
     # All verse stems are in the profile, so next_words_to_learn returns nothing.
@@ -456,7 +453,7 @@ def test_study_queue_empty_when_nothing_to_do():
 
 def test_study_queue_seed_words_not_in_due_reviews():
     """Seed words (no review history) are not flagged as due for review."""
-    profile = {s: WordHistory() for s in stem_tokens("faith grace")}
+    profile = {s: WordHistory() for s in tokenize_and_stem("faith grace")}
     bible_df = pl.DataFrame({"verse": ["faith grace"], "ref": ["a"]})
 
     queue = study_queue(bible_df, profile, NOW)
@@ -469,21 +466,21 @@ def test_study_queue_seed_words_not_in_due_reviews():
 
 def test_verse_effort_zero_for_all_known():
     """A verse where every stem is in the seed profile has zero effort."""
-    profile = {s: WordHistory() for s in stem_tokens("the cat sat")}
+    profile = {s: WordHistory() for s in tokenize_and_stem("the cat sat")}
     effort = verse_effort("the cat sat", profile, NOW, decay=False)
     assert effort == 0.0
 
 
 def test_verse_effort_nonzero_for_unknown():
     """Effort is positive when some verse words are unknown."""
-    profile = {s: WordHistory() for s in stem_tokens("the")}
+    profile = {s: WordHistory() for s in tokenize_and_stem("the")}
     effort = verse_effort("the cat sat", profile, NOW, decay=False)
     assert effort > 0.0
 
 
 def test_verse_effort_increases_with_more_unknowns():
     """More unknown words → higher effort (with fallback d=1)."""
-    profile = {s: WordHistory() for s in stem_tokens("the")}
+    profile = {s: WordHistory() for s in tokenize_and_stem("the")}
     effort_one_unknown = verse_effort("the cat", profile, NOW, decay=False)
     effort_two_unknown = verse_effort("the cat sat", profile, NOW, decay=False)
     assert effort_two_unknown > effort_one_unknown
@@ -496,7 +493,7 @@ def test_verse_effort_decay_off_counts_unknown_words():
     _parser._WORDFREQ_AVAILABLE = False
     _parser._wordfreq_warned = False
     try:
-        profile = {s: WordHistory() for s in stem_tokens("the")}
+        profile = {s: WordHistory() for s in tokenize_and_stem("the")}
         import warnings
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -539,8 +536,8 @@ def test_verse_effort_same_rate_different_difficulty():
 def test_weighted_rate_unchanged_when_semantic_model_none():
     """semantic_model=None (default) leaves weighted_comprehension_rate unchanged."""
     vocab_text = "the cat sat on"
-    profile = {s: WordHistory() for s in stem_tokens(vocab_text)}
-    vocab = set(stem_tokens(vocab_text))
+    profile = {s: WordHistory() for s in tokenize_and_stem(vocab_text)}
+    vocab = set(tokenize_and_stem(vocab_text))
     for verse in ["the cat sat", "the dog ran on", "sat quietly"]:
         assert weighted_comprehension_rate(
             verse, profile, NOW, decay=False, semantic_model=None
@@ -568,7 +565,7 @@ def test_load_semantic_model_returns_none_when_spacy_absent(tmp_path):
 
 def test_weighted_rate_no_credit_when_semantic_model_none():
     """An unknown word gets p=0 when no semantic model is provided."""
-    profile = {s: WordHistory() for s in stem_tokens("the")}
+    profile = {s: WordHistory() for s in tokenize_and_stem("the")}
     rate = weighted_comprehension_rate("the joyful", profile, NOW, decay=False, semantic_model=None)
     # "the" known (p=1), "joyful" unknown (p=0) -> 0.5
     assert rate == pytest.approx(0.5)
@@ -678,7 +675,7 @@ def test_longest_span_direct():
 def test_longest_passage_all_known_returns_full_corpus():
     """When all words are known, the longest passage is the entire corpus."""
     df = pl.DataFrame({"verse": ["the cat sat", "on the mat"], "ref": ["a", "b"]})
-    vocab = set(stem_tokens("the cat sat on mat"))
+    vocab = set(tokenize_and_stem("the cat sat on mat"))
     result = grade_longest_passage(df, vocab, min_rate=0.95)
     assert result.height == 1
     assert result["n_verses"][0] == 2
@@ -699,7 +696,7 @@ def test_longest_passage_alternating_finds_longest_run():
     """Corpus alternates known/unknown; result is the longest known run."""
     # Verses: fully known, unknown, fully known, fully known
     # The last two form the longest run
-    vocab = set(stem_tokens("the cat"))
+    vocab = set(tokenize_and_stem("the cat"))
     df = pl.DataFrame({
         "verse": ["the cat", "dog bird fish", "the cat", "the cat"],
         "ref": ["a", "b", "c", "d"],
@@ -740,7 +737,7 @@ def test_longest_passage_combined_rate_not_per_verse():
     Combined: 2/4 = 50% — below 0.95, so no passage qualifies.
     But if vocab covers 3/4 tokens across both: 3/4 = 75%, still below 0.95.
     """
-    vocab = set(stem_tokens("the"))  # only "the" known
+    vocab = set(tokenize_and_stem("the"))  # only "the" known
     df = pl.DataFrame({
         "verse": ["the cat", "the dog"],  # 1/2 each; combined 2/4 = 50%
         "ref": ["a", "b"],
@@ -759,7 +756,7 @@ def test_semantic_credit_raises_comprehension_rate(tmp_path):
     except OSError:
         pytest.skip("en_core_web_md not installed")
     # Profile knows "happy"; verse contains "joyful" (semantically similar but stem-unknown)
-    profile = {s: WordHistory() for s in stem_tokens("happy")}
+    profile = {s: WordHistory() for s in tokenize_and_stem("happy")}
     model = SemanticModel(nlp, ["happy"])
     rate_without = weighted_comprehension_rate("joyful", profile, NOW, decay=False, semantic_model=None)
     rate_with = weighted_comprehension_rate("joyful", profile, NOW, decay=False, semantic_model=model)

@@ -35,8 +35,7 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   verses shorter than `--min-verse-length` score 0. Writes `ref, verse,
   comprehension_rate, known_count, total_count` to the `--out` CSV in **one
   tokenization pass** (the counts feed the UI's longest-passage button). Key
-  functions: `tokenize`, `tokenize_and_stem`, `stem_tokens` (English shortcut),
-  `comprehension_rate`, `grade`, `load_bible`, `load_vocab`.
+  functions: `tokenize`, `tokenize_and_stem`, `comprehension_rate`, `load_bible`, `load_vocab`.
   `--longest-passage-out PATH` writes the single longest contiguous verse span
   whose combined rate ≥ `--known-rate`, via `longest_span()` — an O(n)
   prefix-sum + monotone-stack algorithm shared with the Dash UI (import it,

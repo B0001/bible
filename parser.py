@@ -140,9 +140,6 @@ def tokenize_and_stem(text, lang="en"):
     return tokens
 
 
-def stem_tokens(text):
-    """Lowercase, tokenize, and Snowball-stem ``text`` into a list of stems."""
-    return tokenize_and_stem(text, "en")
 
 
 def load_vocab(path, lang="en"):
@@ -477,18 +474,6 @@ def comprehension_rate(verse, vocab_stems, min_verse_length=1, lang="en"):
         return 0.0
     known = sum(1 for f in forms if f in vocab_stems)
     return known / len(forms)
-
-
-def grade(bible_df, vocab_stems, min_verse_length=1, lang="en"):
-    """Add a ``comprehension_rate`` column to ``bible_df``."""
-    return bible_df.with_columns(
-        pl.col("verse")
-        .map_elements(
-            lambda v: comprehension_rate(v, vocab_stems, min_verse_length, lang),
-            return_dtype=pl.Float64,
-        )
-        .alias("comprehension_rate")
-    )
 
 
 def grade_passages(bible_df, vocab_stems, window, min_verse_length=1, lang="en"):
