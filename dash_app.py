@@ -57,14 +57,7 @@ def _strip_marks(text):
 # ---------------------------------------------------------------------------
 
 def load_graded_raw(path):
-    """Load graded CSV (local or s3://) in file order; return DataFrame."""
-    if path.startswith("s3://"):
-        try:
-            import fsspec
-        except ImportError:
-            raise ImportError("pip install 'bible-reader[s3]' to read from S3") from None
-        with fsspec.open(path, "rb") as f:
-            return pl.read_csv(f)
+    """Load graded CSV in file order; return DataFrame."""
     if not os.path.exists(path):
         raise FileNotFoundError(path)
     return pl.read_csv(path)
