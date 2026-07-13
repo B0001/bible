@@ -130,12 +130,6 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 always run pytest from the project root, and keep the `[tool.pytest.ini_options]`
 block in `pyproject.toml`.
 
-`start.py` is unrelated to the app logic — it's a boto3 helper to start/stop the
-EC2 builder instance and print the SSH command:
-```bash
-python3 start.py --region us-east-1 --user ec2-user --pem key.pem [--instance_id i-xxxx] [--stop true]
-```
-
 ## Deployment / infra
 
 One `Dockerfile` on `python:3.12-slim`: installs from `requirements.txt` (core
@@ -144,6 +138,3 @@ copies `bibles.toml` + `scripts/`, pre-grades the sample data to
 `out/nasb_graded.csv`, and serves via gunicorn (`dash_app:server`) on
 `0.0.0.0:8050` with a `/health` endpoint. `requirements.txt` mirrors the core
 pyproject deps; `pyproject.toml` is canonical.
-
-Supporting scripts (`aws-builder-userdata.sh`, `gcp-builder-userdata.sh`,
-`minio-start.sh`, `start.py`) are infra helpers unrelated to the app logic.
