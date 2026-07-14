@@ -664,6 +664,10 @@ el.importFile.addEventListener('change', async () => {
 
 async function init() {
   ({ corpusRanks, verseDifficulty, nextWords } = await import('./rank.js'));
+  if (!el.bibleSelect) {
+    showError('Bible selector element not found');
+    return;
+  }
   try {
     const resp = await fetch('data/manifest.json');
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -673,6 +677,10 @@ async function init() {
     return;
   }
   rtlLangs = new Set(manifest.rtl || ['he']);
+  if (!manifest.bibles || manifest.bibles.length === 0) {
+    showError('No bibles found in manifest');
+    return;
+  }
   for (const b of manifest.bibles) {
     const opt = document.createElement('option');
     opt.value = b.id;
