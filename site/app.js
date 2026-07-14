@@ -186,7 +186,7 @@ function updateLevelLabel() {
 
 const el = {};
 for (const id of ['bible-select', 'loading', 'vocab', 'vocab-label', 'rate-min',
-  'rate-max', 'max-unknown', 'search', 'unread-only', 'find-passage',
+  'rate-max', 'max-unknown', 'search', 'unread-only', 'find-passage', 'passage-rate',
   'export-data', 'import-data', 'import-file', 'progress', 'passage-panel',
   'verse-body', 'prev-page', 'next-page', 'page-info', 'error',
   'audio-panel', 'audio-player', 'heatmap-toggle', 'pauses-toggle', 'level',
@@ -297,31 +297,88 @@ function rescore() {
   renderLearnNext();
 }
 
-function renderPassage() {
+// Top-K non-overlapping passages, longest first: greedily take the longest
+// span, split the surrounding segments, repeat. Reuses longestSpan per
+// segment with the result cached, so each iteration only rescans the two
+// segments the previous split created.
+function topSpans(knownArr, totalArr, minRate, k = 10) {
+  const spanOf = (lo, hi) => {
+    const s = longestSpan(knownArr.slice(lo, hi), totalArr.slice(lo, hi), minRate);
+    return s ? [lo + s[0], lo + s[1]] : null;
+  };
+  const segs = [{ lo: 0, hi: knownArr.length, span: spanOf(0, knownArr.length) }];
+  const out = [];
+  while (out.length < k) {
+    let bi = -1;
+    for (let s = 0; s < segs.length; s++) {
+      const sp = segs[s].span;
+      if (sp && (bi < 0 || sp[1] - sp[0] > segs[bi].span[1] - segs[bi].span[0])) bi = s;
+    }
+    if (bi < 0) break;
+    const { lo, hi, span } = segs[bi];
+    out.push(span);
+    const repl = [];
+    if (span[0] > lo) repl.push({ lo, hi: span[0], span: spanOf(lo, span[0]) });
+    if (hi > span[1]) repl.push({ lo: span[1], hi, span: spanOf(span[1], hi) });
+    segs.splice(bi, 1, ...repl);
+  }
+  return out;
+}
+
+const MAX_PASSAGE_LINES = 30;
+
+function renderPassages() {
   const panel = el.passagePanel;
   panel.textContent = '';
   panel.hidden = false;
-  const span = longestSpan(known, total, PASSAGE_RATE);
-  if (!span) {
-    panel.textContent = 'No passage at ≥95% found.';
+  const pct = Math.min(100, Math.max(50, Number(el.passageRate.value) || 95));
+  // Effective known set matches the rest of the app: your own words are
+  // free, plus the top-N most frequent words the level slider grants.
+  const vocab = knownSet();
+  const N = levelN();
+  const n = bible.tokens.length;
+  const effKnown = new Array(n);
+  for (let i = 0; i < n; i++) {
+    let k = 0;
+    for (const t of bible.tokens[i])
+      if (vocab.has(t) || (ranks.get(t) ?? Infinity) <= N) k++;
+    effKnown[i] = k;
+  }
+  const spans = topSpans(effKnown, total, pct / 100, 10);
+  if (!spans.length) {
+    panel.textContent = `No passage at ≥${pct}% found — lower the minimum % or raise your vocabulary level.`;
     return;
   }
-  const [i, j] = span;
-  let k = 0, t = 0;
-  for (let v = i; v < j; v++) { k += known[v]; t += total[v]; }
-  const rate = t ? (100 * k / t).toFixed(1) : '0.0';
-  const head = document.createElement('p');
-  head.className = 'passage-head';
-  head.textContent = `Longest passage: ${bible.refs[i]} – ${bible.refs[j - 1]} (${j - i} verses, ${rate}% comprehension)`;
-  panel.appendChild(head);
   const rtl = rtlLangs.has(bible.lang);
-  for (let v = i; v < j; v++) {
-    const line = document.createElement('p');
-    line.className = 'passage-line';
-    line.textContent = `${bible.refs[v]}  ${bible.verses[v]}`;
-    if (rtl) { line.dir = 'rtl'; line.classList.add('rtl'); }
-    panel.appendChild(line);
-  }
+  spans.forEach(([i, j], idx) => {
+    let k = 0, t = 0;
+    for (let v = i; v < j; v++) { k += effKnown[v]; t += total[v]; }
+    const rate = t ? (100 * k / t).toFixed(1) : '0.0';
+    const d = document.createElement('details');
+    d.className = 'passage';
+    if (idx === 0) d.open = true;
+    const summary = document.createElement('summary');
+    summary.className = 'passage-head';
+    summary.textContent =
+      `${bible.refs[i]} – ${bible.refs[j - 1]} · ${j - i} verses · ${t} words · ${rate}%`;
+    d.appendChild(summary);
+    const last = Math.min(j, i + MAX_PASSAGE_LINES);
+    for (let v = i; v < last; v++) {
+      const line = document.createElement('p');
+      line.className = 'passage-line';
+      line.textContent = `${bible.refs[v]}  ${bible.verses[v]}`;
+      if (rtl) { line.dir = 'rtl'; line.classList.add('rtl'); }
+      d.appendChild(line);
+    }
+    if (last < j) {
+      const more = document.createElement('p');
+      more.className = 'passage-line';
+      more.textContent = `… ${j - last} more verses (${bible.refs[last]} – ${bible.refs[j - 1]})`;
+      d.appendChild(more);
+    }
+    panel.appendChild(d);
+  });
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 function renderLearnNext() {
@@ -616,7 +673,10 @@ el.pausesToggle.addEventListener('change', () => {
 el.prevPage.addEventListener('click', () => { page--; renderTable(); });
 el.nextPage.addEventListener('click', () => { page++; renderTable(); });
 
-el.findPassage.addEventListener('click', () => { if (bible) renderPassage(); });
+el.findPassage.addEventListener('click', () => { if (bible) renderPassages(); });
+el.passageRate.addEventListener('change', () => {
+  if (bible && !el.passagePanel.hidden) renderPassages();
+});
 
 el.exportData.addEventListener('click', () => {
   const data = {};

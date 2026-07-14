@@ -110,6 +110,22 @@ def test_learn_next_chip_tap_rescores(loaded_page):
     assert errors == []
 
 
+def test_find_passages_lists_results(loaded_page):
+    page, errors = loaded_page
+    page.eval_on_selector("#advanced", "el => el.open = true")
+    page.click("#find-passage")
+    page.wait_for_function(
+        "document.querySelectorAll('#passage-panel details.passage').length > 0",
+        timeout=15000,
+    )
+    heads = page.eval_on_selector_all(
+        "#passage-panel .passage-head", "els => els.map(e => e.textContent)"
+    )
+    assert len(heads) > 1  # a list, not just the single longest
+    assert "verses" in heads[0]
+    assert errors == []
+
+
 def test_dark_mode_background(loaded_page):
     page, _ = loaded_page
     page.emulate_media(color_scheme="dark")
