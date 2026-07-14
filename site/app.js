@@ -116,10 +116,15 @@ function stripMarks(s) {
 
 // ---------------------------------------------------------------- scoring
 
-function score() {
+// Helper: return the union of vocab textarea and learned stems
+function knownSet() {
   const vocab = tokenizeVocab(el.vocab.value, bible.lang);
-  // Phase 13: include learned stems in the vocab set
   for (const s of learned) vocab.add(s);
+  return vocab;
+}
+
+function score() {
+  const vocab = knownSet();
 
   const n = bible.tokens.length;
   known = new Array(n);
@@ -169,6 +174,13 @@ function levelN() {
   return Math.round(50 * Math.pow(max / 50, levelPos / 100));
 }
 
+// Phase 13: update level label with current word count and readable verse count
+function updateLevelLabel() {
+  if (!el.levelLabel) return;
+  const readable = filtered.filter(i => (difficulty[i] ?? Infinity) <= levelN()).length;
+  el.levelLabel.textContent = `Vocabulary level: ${levelN()} words — ${readable} of ${filtered.length} verses readable`;
+}
+
 // ---------------------------------------------------------------- rendering
 
 const el = {};
@@ -176,7 +188,8 @@ for (const id of ['bible-select', 'loading', 'vocab', 'vocab-label', 'rate-min',
   'rate-max', 'max-unknown', 'search', 'unread-only', 'find-passage',
   'export-data', 'import-data', 'import-file', 'progress', 'passage-panel',
   'verse-body', 'prev-page', 'next-page', 'page-info', 'error',
-  'audio-panel', 'audio-player', 'heatmap-toggle', 'pauses-toggle']) {
+  'audio-panel', 'audio-player', 'heatmap-toggle', 'pauses-toggle', 'level',
+  'level-label', 'learn-next']) {
   el[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = document.getElementById(id);
 }
 
@@ -270,6 +283,7 @@ function renderTable() {
 
 function refresh() {
   applyFilters();
+  updateLevelLabel();
   renderProgress();
   renderTable();
 }
@@ -279,6 +293,7 @@ function rescore() {
   score();
   page = 0;
   refresh();
+  renderLearnNext();
 }
 
 function renderPassage() {
@@ -305,6 +320,49 @@ function renderPassage() {
     line.textContent = `${bible.refs[v]}  ${bible.verses[v]}`;
     if (rtl) { line.dir = 'rtl'; line.classList.add('rtl'); }
     panel.appendChild(line);
+  }
+}
+
+function renderLearnNext() {
+  if (!bible || !ranks) return;
+  const vocab = knownSet();
+  const words = nextWords(bible.tokens, ranks, levelN(), vocab);
+  if (words.length === 0) {
+    el.learnNext.innerHTML = '';
+    return;
+  }
+  el.learnNext.innerHTML = '';
+  const heading = document.createElement('h3');
+  heading.textContent = 'Learn next';
+  el.learnNext.appendChild(heading);
+  for (const { stem, count } of words) {
+    const btn = document.createElement('button');
+    btn.className = 'chip';
+    btn.textContent = `${stem} +${count}`;
+    btn.title = `unlocks ${count} verse(s) at your level`;
+    btn.addEventListener('click', () => {
+      learned.add(stem);
+      saveJSON('learned:' + bible.id, [...learned]);
+      rescore();
+    });
+    el.learnNext.appendChild(btn);
+  }
+  if (learned.size > 0) {
+    const muted = document.createElement('p');
+    muted.style.fontSize = '0.9em';
+    muted.style.color = '#888';
+    muted.textContent = `Learned: ${learned.size} words `;
+    const resetBtn = document.createElement('button');
+    resetBtn.id = 'reset-learned';
+    resetBtn.textContent = 'Reset';
+    resetBtn.style.marginLeft = '0.5em';
+    resetBtn.addEventListener('click', () => {
+      learned.clear();
+      saveJSON('learned:' + bible.id, []);
+      rescore();
+    });
+    muted.appendChild(resetBtn);
+    el.learnNext.appendChild(muted);
   }
 }
 
@@ -526,6 +584,17 @@ for (const input of [el.rateMin, el.rateMax, el.maxUnknown, el.search]) {
 }
 el.unreadOnly.addEventListener('change', () => { page = 0; refresh(); });
 
+// Phase 13: level slider (no debounce needed — difficulty doesn't change, just filtering)
+if (el.level) {
+  el.level.addEventListener('input', debounce(() => {
+    if (!bible) return;
+    levelPos = Number(el.level.value);
+    saveJSON('level:' + bible.id, levelPos);
+    refresh();
+    renderLearnNext();
+  }, 150));
+}
+
 // Audio analytics toggles (P10.7): persist and re-render so word spans pick up
 // the heatmap background / pause markers. No-op when no chapter has word data.
 el.heatmapToggle.checked = heatmapOn;
@@ -590,7 +659,7 @@ el.importFile.addEventListener('change', async () => {
 // ---------------------------------------------------------------- init
 
 async function init() {
-  ({ corpusRanks, verseDifficulty } = await import('./rank.js'));
+  ({ corpusRanks, verseDifficulty, nextWords } = await import('./rank.js'));
   try {
     const resp = await fetch('data/manifest.json');
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);

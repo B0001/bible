@@ -21,3 +21,26 @@ export function verseDifficulty(forms, ranks, target = 0.95, known = new Set()) 
   const k = Math.max(1, Math.ceil(target * eff.length));
   return eff[k - 1];
 }
+
+export function nextWords(tokenLists, ranks, N, known, target = 0.95, topN = 10) {
+  const fallback = ranks.size + 1;
+  const unlocks = new Map();
+  for (const toks of tokenLists) {
+    if (!toks.length) continue;
+    const slack = toks.length - Math.max(1, Math.ceil(target * toks.length));
+    const over = new Map(); // stem -> occurrences with eff rank > N
+    let overTotal = 0;
+    for (const t of toks) {
+      const r = known.has(t) ? 0 : (ranks.get(t) ?? fallback);
+      if (r > N) { over.set(t, (over.get(t) || 0) + 1); overTotal++; }
+    }
+    if (overTotal <= slack) continue;            // already readable
+    for (const [stem, c] of over)
+      if (overTotal - c <= slack)                // learning stem unlocks it
+        unlocks.set(stem, (unlocks.get(stem) || 0) + 1);
+  }
+  return [...unlocks.entries()]
+    .map(([stem, count]) => ({ stem, count, rank: ranks.get(stem) ?? fallback }))
+    .sort((a, b) => b.count - a.count || a.rank - b.rank)
+    .slice(0, topN);
+}
