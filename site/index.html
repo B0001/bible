@@ -33,28 +33,9 @@
       <textarea id="vocab" rows="6" placeholder="paste the words you know…"></textarea>
 
       <div class="row">
-        <label>Comprehension min %
-          <input type="number" id="rate-min" min="0" max="100" value="90">
-        </label>
-        <label>max %
-          <input type="number" id="rate-max" min="0" max="100" value="100">
-        </label>
-        <label title="1 = the i+1 sweet spot: one word to learn from context">Max unknown
-          <input type="number" id="max-unknown" min="0" placeholder="off">
-        </label>
         <label class="grow">Search
           <input type="search" id="search" placeholder="reference or text…">
         </label>
-        <label class="check">
-          <input type="checkbox" id="unread-only"> Unread only
-        </label>
-      </div>
-
-      <div class="row">
-        <button id="find-passage">Find longest passage</button>
-        <button id="export-data">Export data</button>
-        <button id="import-data">Import data</button>
-        <input type="file" id="import-file" accept="application/json" hidden>
       </div>
 
       <p id="progress" class="progress"></p>
@@ -68,14 +49,6 @@
          The deployed site ships no audio metadata, so this stays hidden. -->
     <section id="audio-panel" hidden>
       <audio id="audio-player" controls preload="none"></audio>
-      <div class="row">
-        <label class="check">
-          <input type="checkbox" id="heatmap-toggle"> Emphasis heatmap
-        </label>
-        <label class="check">
-          <input type="checkbox" id="pauses-toggle"> Pause markers
-        </label>
-      </div>
     </section>
 
     <section>
@@ -91,6 +64,40 @@
         <button id="next-page">Next</button>
       </div>
     </section>
+
+    <details id="advanced">
+      <summary>Advanced</summary>
+      <div class="row">
+        <label>Comprehension min %
+          <input type="number" id="rate-min" min="0" max="100" value="0">
+        </label>
+        <label>max %
+          <input type="number" id="rate-max" min="0" max="100" value="100">
+        </label>
+        <label title="1 = the i+1 sweet spot: one word to learn from context">Max unknown
+          <input type="number" id="max-unknown" min="0" placeholder="off">
+        </label>
+        <label class="check">
+          <input type="checkbox" id="unread-only"> Unread only
+        </label>
+      </div>
+
+      <div class="row">
+        <button id="find-passage">Find longest passage</button>
+        <button id="export-data">Export data</button>
+        <button id="import-data">Import data</button>
+        <input type="file" id="import-file" accept="application/json" hidden>
+      </div>
+
+      <div class="row">
+        <label class="check">
+          <input type="checkbox" id="heatmap-toggle"> Emphasis heatmap
+        </label>
+        <label class="check">
+          <input type="checkbox" id="pauses-toggle"> Pause markers
+        </label>
+      </div>
+    </details>
   </main>
 
   <script type="module" src="app.js"></script>

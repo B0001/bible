@@ -620,7 +620,8 @@ el.exportData.addEventListener('click', () => {
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key === 'bible' || key.startsWith('vocab:') || key.startsWith('reads:'))
+      if (key === 'bible' || key.startsWith('vocab:') || key.startsWith('reads:') ||
+          key.startsWith('learned:') || key.startsWith('level:'))
         data[key] = localStorage.getItem(key);
     }
   } catch { /* ignore */ }
@@ -646,7 +647,8 @@ el.importFile.addEventListener('change', async () => {
   }
   try {
     for (const [key, value] of Object.entries(data)) {
-      if (key === 'bible' || key.startsWith('vocab:') || key.startsWith('reads:'))
+      if (key === 'bible' || key.startsWith('vocab:') || key.startsWith('reads:') ||
+          key.startsWith('learned:') || key.startsWith('level:'))
         localStorage.setItem(key, String(value));
     }
   } catch { /* ignore */ }
