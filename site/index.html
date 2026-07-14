@@ -12,46 +12,63 @@
 </head>
 <body>
   <header class="topbar">
-    <h1>Graded Reader</h1>
-    <label>Bible
-      <select id="bible-select"></select>
-      <span id="loading" hidden>Loading…</span>
-    </label>
+    <select id="bible-select" aria-label="Bible"></select>
+    <nav>
+      <a href="#read" class="active">Read</a>
+      <a href="#browse">Browse</a>
+      <a href="#settings" aria-label="Settings">⚙</a>
+    </nav>
+    <span id="loading" hidden>Loading…</span>
   </header>
 
   <main>
     <div id="error" class="error" hidden></div>
 
-    <section class="level-panel">
-      <label for="level"><span id="level-label">Vocabulary level</span></label>
-      <input type="range" id="level" min="0" max="100" step="1" value="50">
-      <p class="subtitle">Drag the slider from simple to hard — verses unlock as your vocabulary grows.</p>
+    <section id="route-read">
+      <section class="level-panel">
+        <label for="level"><span id="level-label">Vocabulary level</span></label>
+        <input type="range" id="level" min="0" max="100" step="1" value="50">
+        <p class="subtitle">Drag the slider from simple to hard — passages grow as your vocabulary does.</p>
+      </section>
+
+      <section id="learn-next" class="learn-next"></section>
+
+      <article id="reader" class="reader"></article>
+      <div class="reader-actions">
+        <button id="reader-prev" aria-label="Previous passage">←</button>
+        <button id="reader-done">✓ Done</button>
+        <button id="reader-next" aria-label="Next passage">→</button>
+      </div>
+      <p id="reader-count" class="reader-count"></p>
+      <p id="progress" class="progress"></p>
     </section>
 
-    <section id="learn-next" class="learn-next"></section>
+    <section id="route-browse" hidden>
+      <div class="row">
+        <label class="grow">Search
+          <input type="search" id="search" placeholder="reference or text…">
+        </label>
+        <label class="check">
+          <input type="checkbox" id="unread-only"> Unread only
+        </label>
+      </div>
 
-    <div class="row">
-      <label class="grow">Search
-        <input type="search" id="search" placeholder="reference or text…">
-      </label>
-    </div>
+      <!-- Local-only audio mode (P10.3): appears when the site was exported with
+           `export_static.py --audio` AND is served locally with the audio
+           directory in place (e.g. `python -m http.server` from the repo root).
+           The deployed site ships no audio metadata, so this stays hidden. -->
+      <section id="audio-panel" hidden>
+        <audio id="audio-player" controls preload="none"></audio>
+        <div class="row">
+          <label class="check">
+            <input type="checkbox" id="heatmap-toggle"> Emphasis heatmap
+          </label>
+          <label class="check">
+            <input type="checkbox" id="pauses-toggle"> Pause markers
+          </label>
+        </div>
+      </section>
 
-    <label for="vocab">
-      <span id="vocab-label">Words you already know (optional)</span>
-    </label>
-    <textarea id="vocab" rows="6" placeholder="paste the words you know…"></textarea>
-
-    <p id="progress" class="progress"></p>
-
-    <!-- Local-only audio mode (P10.3): appears when the site was exported with
-         `export_static.py --audio` AND is served locally with the audio
-         directory in place (e.g. `python -m http.server` from the repo root).
-         The deployed site ships no audio metadata, so this stays hidden. -->
-    <section id="audio-panel" hidden>
-      <audio id="audio-player" controls preload="none"></audio>
-    </section>
-
-    <section>
       <table id="verse-table">
         <thead>
           <tr><th>Reference</th><th>Verse</th><th>%</th><th>Unknown</th><th>Read</th></tr>
@@ -65,46 +82,18 @@
       </div>
     </section>
 
-    <details id="advanced">
-      <summary>Advanced</summary>
-      <div class="row">
-        <label>Comprehension min %
-          <input type="number" id="rate-min" min="0" max="100" value="0">
-        </label>
-        <label>max %
-          <input type="number" id="rate-max" min="0" max="100" value="100">
-        </label>
-        <label title="1 = the i+1 sweet spot: one word to learn from context">Max unknown
-          <input type="number" id="max-unknown" min="0" placeholder="off">
-        </label>
-        <label class="check">
-          <input type="checkbox" id="unread-only"> Unread only
-        </label>
-      </div>
-
-      <div class="row">
-        <button id="find-passage">Find longest passages</button>
-        <label title="Minimum combined comprehension for a passage, at your current level">min %
-          <input type="number" id="passage-rate" min="50" max="100" value="95">
-        </label>
-      </div>
-      <section id="passage-panel" class="passage" hidden></section>
+    <section id="route-settings" hidden>
+      <label for="vocab">
+        <span id="vocab-label">Words you already know (optional)</span>
+      </label>
+      <textarea id="vocab" rows="8" placeholder="paste the words you know…"></textarea>
 
       <div class="row">
         <button id="export-data">Export data</button>
         <button id="import-data">Import data</button>
         <input type="file" id="import-file" accept="application/json" hidden>
       </div>
-
-      <div class="row">
-        <label class="check">
-          <input type="checkbox" id="heatmap-toggle"> Emphasis heatmap
-        </label>
-        <label class="check">
-          <input type="checkbox" id="pauses-toggle"> Pause markers
-        </label>
-      </div>
-    </details>
+    </section>
   </main>
 
   <script type="module" src="app.js"></script>
