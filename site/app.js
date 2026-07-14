@@ -5,6 +5,9 @@
 // ---------------------------------------------------------------- state
 
 const PAGE_SIZE = 20;
+const READER_RATE = 0.95;   // a passage must read at >=95% at your level
+const READER_CHUNK = 120;   // max verses per reader page (long spans get chunked)
+const READER_MAX = 10;      // reader queue length
 const PAUSE_THRESHOLD = 0.8;  // s; inter-word gap that marks a breathing point (P10.7)
 const HEATMAP_CAP = 2;        // word duration >= CAP x chapter median = full intensity
 
@@ -33,6 +36,9 @@ let ranks = null;             // Map form -> corpus rank, per loaded bible
 let difficulty = [];          // per-verse difficulty (number | null)
 let learned = new Set();      // stems tapped in the learn-next panel
 let levelPos = 50;            // slider position 0..100 (persisted per bible)
+let passages = [];    // Phase 15: reader queue of [i, j) verse spans
+let passageIdx = 0;   // current position in the queue
+let effKnown = [];    // per-verse known count at the current level
 
 // localStorage helpers — can throw in private mode, so wrap everything.
 function loadJSON(key, fallback) {
@@ -178,18 +184,20 @@ function levelN() {
 function updateLevelLabel() {
   if (!el.levelLabel) return;
   const readable = filtered.filter(i => (difficulty[i] ?? Infinity) <= levelN()).length;
-  el.levelLabel.textContent = `Vocabulary level: ${levelN()} words — ${readable} of ${filtered.length} verses readable`;
+  el.levelLabel.textContent = `${levelN()} words · ${readable} of ${filtered.length} verses readable`;
 }
 
 // ---------------------------------------------------------------- rendering
 
 const el = {};
-for (const id of ['bible-select', 'loading', 'vocab', 'vocab-label', 'rate-min',
-  'rate-max', 'max-unknown', 'search', 'unread-only', 'find-passage', 'passage-rate',
-  'export-data', 'import-data', 'import-file', 'progress', 'passage-panel',
+for (const id of ['bible-select', 'loading', 'vocab', 'vocab-label',
+  'search', 'unread-only',
+  'export-data', 'import-data', 'import-file', 'progress',
   'verse-body', 'prev-page', 'next-page', 'page-info', 'error',
   'audio-panel', 'audio-player', 'heatmap-toggle', 'pauses-toggle', 'level',
-  'level-label', 'learn-next']) {
+  'level-label', 'learn-next',
+  'route-read', 'route-browse', 'route-settings',
+  'reader', 'reader-count', 'reader-prev', 'reader-done', 'reader-next']) {
   el[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = document.getElementById(id);
 }
 
@@ -199,17 +207,9 @@ function showError(msg) {
 }
 
 function applyFilters() {
-  const loNum = parseFloat(el.rateMin.value);
-  const hiNum = parseFloat(el.rateMax.value);
-  const lo = (Number.isNaN(loNum) ? 0 : loNum) / 100;
-  const hi = (Number.isNaN(hiNum) ? 100 : hiNum) / 100;
-  const maxUnknown = parseInt(el.maxUnknown.value, 10);
-  const capUnknown = !Number.isNaN(maxUnknown);
   const needle = stripMarks(el.search.value.trim());
   const unreadOnly = el.unreadOnly.checked;
   filtered = order.filter(i =>
-    rates[i] >= lo && rates[i] <= hi &&
-    (!capUnknown || total[i] - known[i] <= maxUnknown) &&
     (!needle || searchText[i].includes(needle)) &&
     (!unreadOnly || !reads.has(bible.refs[i])));
 }
@@ -298,6 +298,8 @@ function rescore() {
   page = 0;
   refresh();
   renderLearnNext();
+  computePassages();
+  renderReader();
 }
 
 // Top-K non-overlapping passages, longest first: greedily take the longest
@@ -328,60 +330,90 @@ function topSpans(knownArr, totalArr, minRate, k = 10) {
   return out;
 }
 
-const MAX_PASSAGE_LINES = 30;
+// ---------------------------------------------------------------- reader (Phase 15)
 
-function renderPassages() {
-  const panel = el.passagePanel;
-  panel.textContent = '';
-  panel.hidden = false;
-  const pct = Math.min(100, Math.max(50, Number(el.passageRate.value) || 95));
-  // Effective known set matches the rest of the app: your own words are
-  // free, plus the top-N most frequent words the level slider grants.
+// Per-verse known-token counts at the current level: the user's own words
+// (vocab textarea + tapped chips) are free, plus the top-N most frequent
+// words the level slider grants. Same definition as the level label.
+function effectiveKnownCounts() {
   const vocab = knownSet();
   const N = levelN();
   const n = bible.tokens.length;
-  const effKnown = new Array(n);
+  const out = new Array(n);
   for (let i = 0; i < n; i++) {
     let k = 0;
     for (const t of bible.tokens[i])
       if (vocab.has(t) || (ranks.get(t) ?? Infinity) <= N) k++;
-    effKnown[i] = k;
+    out[i] = k;
   }
-  const spans = topSpans(effKnown, total, pct / 100, 10);
-  if (!spans.length) {
-    panel.textContent = `No passage at ≥${pct}% found — lower the minimum % or raise your vocabulary level.`;
+  return out;
+}
+
+// Rebuild the reader queue: top spans at the current level, long spans
+// chunked to READER_CHUNK verses so slider-at-100 (whole-Bible span) stays
+// renderable. See PHASE15_DESIGN.md D2.
+function computePassages() {
+  effKnown = effectiveKnownCounts();
+  const spans = topSpans(effKnown, total, READER_RATE, READER_MAX);
+  passages = [];
+  for (const [i, j] of spans)
+    for (let s = i; s < j && passages.length < READER_MAX; s += READER_CHUNK)
+      passages.push([s, Math.min(s + READER_CHUNK, j)]);
+  passageIdx = 0;
+}
+
+function renderReader() {
+  const box = el.reader;
+  box.textContent = '';
+  if (!passages.length) {
+    const p = document.createElement('p');
+    p.className = 'reader-empty';
+    p.textContent = 'Nothing readable at this level yet — drag the slider right, or tap a word above to learn it.';
+    box.appendChild(p);
+    el.readerCount.textContent = '';
+    el.readerPrev.disabled = el.readerDone.disabled = el.readerNext.disabled = true;
     return;
   }
-  const rtl = rtlLangs.has(bible.lang);
-  spans.forEach(([i, j], idx) => {
-    let k = 0, t = 0;
-    for (let v = i; v < j; v++) { k += effKnown[v]; t += total[v]; }
-    const rate = t ? (100 * k / t).toFixed(1) : '0.0';
-    const d = document.createElement('details');
-    d.className = 'passage';
-    if (idx === 0) d.open = true;
-    const summary = document.createElement('summary');
-    summary.className = 'passage-head';
-    summary.textContent =
-      `${bible.refs[i]} – ${bible.refs[j - 1]} · ${j - i} verses · ${t} words · ${rate}%`;
-    d.appendChild(summary);
-    const last = Math.min(j, i + MAX_PASSAGE_LINES);
-    for (let v = i; v < last; v++) {
-      const line = document.createElement('p');
-      line.className = 'passage-line';
-      line.textContent = `${bible.refs[v]}  ${bible.verses[v]}`;
-      if (rtl) { line.dir = 'rtl'; line.classList.add('rtl'); }
-      d.appendChild(line);
-    }
-    if (last < j) {
-      const more = document.createElement('p');
-      more.className = 'passage-line';
-      more.textContent = `… ${j - last} more verses (${bible.refs[last]} – ${bible.refs[j - 1]})`;
-      d.appendChild(more);
-    }
-    panel.appendChild(d);
-  });
-  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  passageIdx = Math.min(passageIdx, passages.length - 1);
+  const [i, j] = passages[passageIdx];
+  let k = 0, t = 0;
+  for (let v = i; v < j; v++) { k += effKnown[v]; t += total[v]; }
+  const rate = t ? (100 * k / t).toFixed(1) : '0.0';
+
+  const head = document.createElement('h2');
+  head.className = 'reader-head';
+  head.textContent = `${bible.refs[i]} – ${bible.refs[j - 1]}`;
+  const meta = document.createElement('p');
+  meta.className = 'reader-meta';
+  meta.textContent = `${j - i} verses · ${t} words · ${rate}% readable`;
+
+  const text = document.createElement('div');
+  text.className = 'reader-text';
+  if (rtlLangs.has(bible.lang)) { text.dir = 'rtl'; text.classList.add('rtl'); }
+  for (let v = i; v < j; v++) {
+    const sup = document.createElement('sup');
+    sup.textContent = bible.refs[v].split(':').pop();
+    text.appendChild(sup);
+    text.appendChild(document.createTextNode(bible.verses[v] + ' '));
+  }
+  box.append(head, meta, text);
+
+  el.readerCount.textContent = `Passage ${passageIdx + 1} of ${passages.length}`;
+  el.readerPrev.disabled = passageIdx === 0;
+  el.readerNext.disabled = passageIdx >= passages.length - 1;
+  el.readerDone.disabled = false;
+}
+
+// ---------------------------------------------------------------- router (Phase 15)
+
+function route() {
+  const h = ['#read', '#browse', '#settings'].includes(location.hash)
+    ? location.hash : '#read';
+  el.routeRead.hidden = h !== '#read';
+  el.routeBrowse.hidden = h !== '#browse';
+  el.routeSettings.hidden = h !== '#settings';
+  for (const a of document.querySelectorAll('.topbar nav a'))
+    a.classList.toggle('active', a.getAttribute('href') === h);
 }
 
 function renderLearnNext() {
@@ -623,7 +655,6 @@ async function loadBible(id) {
   searchText = bible.refs.map((r, i) => stripMarks(r + ' ' + bible.verses[i]));
   reads = new Set(loadJSON('reads:' + bible.id, []));
   el.vocab.value = loadJSON('vocab:' + bible.lang, '');
-  el.passagePanel.hidden = true;
   rescore();
 }
 
@@ -642,9 +673,7 @@ el.vocab.addEventListener('input', debounce(() => {
   rescore();
 }, 300));
 
-for (const input of [el.rateMin, el.rateMax, el.maxUnknown, el.search]) {
-  input.addEventListener('input', debounce(() => { page = 0; refresh(); }, 200));
-}
+el.search.addEventListener('input', debounce(() => { page = 0; refresh(); }, 200));
 el.unreadOnly.addEventListener('change', () => { page = 0; refresh(); });
 
 // Phase 13: level slider (no debounce needed — difficulty doesn't change, just filtering)
@@ -655,6 +684,8 @@ if (el.level) {
     saveJSON('level:' + bible.id, levelPos);
     refresh();
     renderLearnNext();
+    computePassages();
+    renderReader();
   }, 150));
 }
 
@@ -676,10 +707,24 @@ el.pausesToggle.addEventListener('change', () => {
 el.prevPage.addEventListener('click', () => { page--; renderTable(); });
 el.nextPage.addEventListener('click', () => { page++; renderTable(); });
 
-el.findPassage.addEventListener('click', () => { if (bible) renderPassages(); });
-el.passageRate.addEventListener('change', () => {
-  if (bible && !el.passagePanel.hidden) renderPassages();
+el.readerPrev.addEventListener('click', () => {
+  passageIdx--; renderReader(); el.reader.scrollIntoView();
 });
+el.readerNext.addEventListener('click', () => {
+  passageIdx++; renderReader(); el.reader.scrollIntoView();
+});
+el.readerDone.addEventListener('click', () => {
+  if (!passages.length) return;
+  const [i, j] = passages[passageIdx];
+  for (let v = i; v < j; v++) reads.add(bible.refs[v]);
+  saveJSON('reads:' + bible.id, [...reads]);
+  renderProgress();
+  if (passageIdx < passages.length - 1) passageIdx++;
+  renderReader();
+  el.reader.scrollIntoView();
+});
+
+window.addEventListener('hashchange', route);
 
 el.exportData.addEventListener('click', () => {
   const data = {};
@@ -754,6 +799,7 @@ async function init() {
   const saved = loadJSON('bible', manifest.bibles[0].id);
   const id = manifest.bibles.some(b => b.id === saved) ? saved : manifest.bibles[0].id;
   el.bibleSelect.value = id;
+  route();
   await loadBible(id);
 }
 
