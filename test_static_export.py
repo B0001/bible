@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from parser import tokenize_and_stem
+from parser import corpus_ranks, tokenize_and_stem, verse_difficulty
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -114,3 +114,52 @@ def test_stopword_skip_reproduces_ignore_stopwords():
     # "running" is not: it must be stemmed
     assert "running" not in sw
     assert tokenize_and_stem("running", "en")[0] == "run"
+
+
+# --------------------------------------------------------------------------- #
+# JS rank functions parity: the JS corpus_ranks and verse_difficulty must
+# produce the same results as Python. Runs where node exists; skipped otherwise.
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.skipif(not _node, reason="node not installed")
+def test_rank_js_matches_python(tmp_path):
+    """JS corpusRanks/verseDifficulty match Python corpus_ranks/verse_difficulty.
+
+    Uses the D2 fixture from PHASE12_DESIGN.md to verify parity exactly.
+    """
+    # D2 fixture
+    tokens = [["a", "b", "a"], ["b", "c"], ["a", "c", "d", "a"]]
+    ranks = corpus_ranks(tokens)
+
+    # Python expectations
+    assert ranks == {"a": 1, "b": 2, "c": 3, "d": 4}
+    py_diffs = [verse_difficulty(t, ranks, known=frozenset()) for t in tokens]
+    assert py_diffs == [2, 3, 4]
+    py_v2_with_known = verse_difficulty(tokens[1], ranks, known=frozenset(["c"]))
+    assert py_v2_with_known == 2
+    py_v3_with_known = verse_difficulty(tokens[2], ranks, known=frozenset(["c"]))
+    assert py_v3_with_known == 4
+
+    # Run JS to compute the same
+    rank_module = os.path.join(_HERE, "site", "rank.js")
+    runner = tmp_path / "rank_runner.mjs"
+    runner.write_text(
+        f"import {{ corpusRanks, verseDifficulty }} from 'file://{rank_module}';\n"
+        f"const tokens = {json.dumps(tokens)};\n"
+        "const ranks = corpusRanks(tokens);\n"
+        "const ranksObj = Object.fromEntries(ranks);\n"
+        "const diffs = tokens.map(t => verseDifficulty(t, ranks));\n"
+        "const v2WithC = verseDifficulty(tokens[1], ranks, 0.95, new Set(['c']));\n"
+        "const v3WithC = verseDifficulty(tokens[2], ranks, 0.95, new Set(['c']));\n"
+        "console.log(JSON.stringify({ ranks: ranksObj, diffs, v2WithC, v3WithC }));\n"
+    )
+    out = subprocess.run(
+        [_node, str(runner)], capture_output=True, text=True, check=True
+    )
+    result = json.loads(out.stdout.strip())
+
+    # Compare
+    assert result["ranks"] == ranks
+    assert result["diffs"] == py_diffs
+    assert result["v2WithC"] == py_v2_with_known
+    assert result["v3WithC"] == py_v3_with_known
