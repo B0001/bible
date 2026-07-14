@@ -5,7 +5,6 @@
 // ---------------------------------------------------------------- state
 
 const PAGE_SIZE = 20;
-const PASSAGE_RATE = 0.95;
 const PAUSE_THRESHOLD = 0.8;  // s; inter-word gap that marks a breathing point (P10.7)
 const HEATMAP_CAP = 2;        // word duration >= CAP x chapter median = full intensity
 
@@ -216,14 +215,18 @@ function applyFilters() {
 }
 
 function renderProgress() {
-  let sweet = 0, read = 0;
-  for (let i = 0; i < rates.length; i++) {
-    if (rates[i] >= PASSAGE_RATE) {
-      sweet++;
+  // "Readable" matches the level label: difficulty <= the slider's N.
+  const N = levelN();
+  let readable = 0, read = 0;
+  for (let i = 0; i < difficulty.length; i++) {
+    if (difficulty[i] !== null && difficulty[i] <= N) {
+      readable++;
       if (reads.has(bible.refs[i])) read++;
     }
   }
-  el.progress.textContent = `${read} of ${sweet} verses at ≥95% read`;
+  el.progress.textContent = readable
+    ? `${read} of ${readable} readable verses read`
+    : '';
 }
 
 function renderTable() {
