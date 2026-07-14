@@ -265,17 +265,6 @@ button:disabled {
   cursor: default;
 }
 
-/* Primary buttons (find-passage) */
-button#find-passage {
-  background: var(--accent);
-  color: white;
-}
-
-button#find-passage:hover:not(:disabled) {
-  background: var(--accent);
-  filter: brightness(1.1);
-}
-
 /* Select styling */
 select {
   padding: 12px 14px;
@@ -328,42 +317,45 @@ select {
   margin-bottom: 12px;
 }
 
-/* Passage panel */
-.passage {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 14px;
-  margin: 16px 0;
-}
-
-/* #passage-panel is the container; each result is a details.passage card */
-#passage-panel.passage {
-  background: none;
-  border: none;
-  padding: 0;
-}
-
-details.passage {
-  margin: 10px 0;
-}
-
-.passage-head {
-  font-weight: bold;
-  font-size: 0.95rem;
-  margin: 0;
+/* Topbar nav (Phase 15 routes) */
+.topbar nav { display: flex; gap: 4px; margin-left: auto; }
+.topbar nav a {
   min-height: 48px;
   display: flex;
   align-items: center;
-  cursor: pointer;
+  padding: 0 12px;
+  border-radius: 10px;
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 600;
 }
+.topbar nav a.active { color: var(--accent); background: var(--accent-weak); }
 
-.passage-line {
-  font-size: 1.05rem;
-  line-height: 1.65;
-  margin: 8px 0;
-  word-break: break-word;
+/* Reader (Phase 15) */
+.reader {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  margin: 16px 0;
 }
+.reader-head { font-size: 1.25rem; margin: 0 0 4px; text-transform: capitalize; }
+.reader-meta { color: var(--muted); font-size: 0.8rem; margin: 0 0 12px; }
+.reader-text { font-size: 1.15rem; line-height: 1.7; max-width: 65ch; word-break: break-word; }
+.reader-text sup { color: var(--muted); font-size: 0.7em; margin: 0 2px 0 4px; }
+.reader-empty { color: var(--muted); margin: 0; }
+.reader-actions { display: flex; gap: 8px; margin: 12px 0; }
+.reader-actions button { flex: 1; }
+#reader-done { background: var(--accent); color: #fff; border-color: var(--accent); }
+#reader-done:hover:not(:disabled) { filter: brightness(1.1); }
+#reader-done:disabled { opacity: 0.5; }
+.reader-count { color: var(--muted); font-size: 0.8rem; text-align: center; margin: 0 0 8px; }
+
+/* Learn-next: one horizontally scrollable row (Phase 15) */
+#learn-next { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+#learn-next h3 { display: none; }
+#learn-next .chip { flex: 0 0 auto; }
+#learn-next p { flex: 0 0 auto; align-self: center; white-space: nowrap; }
 
 .rtl {
   text-align: right;
