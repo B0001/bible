@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from parser import corpus_ranks, tokenize_and_stem, verse_difficulty
+from parser import corpus_ranks, tokenize_and_stem, verse_difficulty, next_words
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -123,9 +123,9 @@ def test_stopword_skip_reproduces_ignore_stopwords():
 
 @pytest.mark.skipif(not _node, reason="node not installed")
 def test_rank_js_matches_python(tmp_path):
-    """JS corpusRanks/verseDifficulty match Python corpus_ranks/verse_difficulty.
+    """JS corpusRanks/verseDifficulty/nextWords match Python equivalents.
 
-    Uses the D2 fixture from PHASE12_DESIGN.md to verify parity exactly.
+    Uses fixtures from PHASE12_DESIGN.md and PHASE13_DESIGN.md to verify parity.
     """
     # D2 fixture
     tokens = [["a", "b", "a"], ["b", "c"], ["a", "c", "d", "a"]]
@@ -144,22 +144,26 @@ def test_rank_js_matches_python(tmp_path):
     rank_module = os.path.join(_HERE, "site", "rank.js")
     runner = tmp_path / "rank_runner.mjs"
     runner.write_text(
-        f"import {{ corpusRanks, verseDifficulty }} from 'file://{rank_module}';\n"
+        f"import {{ corpusRanks, verseDifficulty, nextWords }} from 'file://{rank_module}';\n"
         f"const tokens = {json.dumps(tokens)};\n"
         "const ranks = corpusRanks(tokens);\n"
         "const ranksObj = Object.fromEntries(ranks);\n"
         "const diffs = tokens.map(t => verseDifficulty(t, ranks));\n"
         "const v2WithC = verseDifficulty(tokens[1], ranks, 0.95, new Set(['c']));\n"
         "const v3WithC = verseDifficulty(tokens[2], ranks, 0.95, new Set(['c']));\n"
-        "console.log(JSON.stringify({ ranks: ranksObj, diffs, v2WithC, v3WithC }));\n"
+        "const nextW = nextWords(tokens, ranks, 1, new Set());\n"
+        "console.log(JSON.stringify({ ranks: ranksObj, diffs, v2WithC, v3WithC, nextW }));\n"
     )
     out = subprocess.run(
         [_node, str(runner)], capture_output=True, text=True, check=True
     )
     result = json.loads(out.stdout.strip())
 
-    # Compare
+    # Compare rank/difficulty
     assert result["ranks"] == ranks
     assert result["diffs"] == py_diffs
     assert result["v2WithC"] == py_v2_with_known
     assert result["v3WithC"] == py_v3_with_known
+
+    # Compare nextWords: at level N=1, only "b" unlocks v1 (v2 needs both b+c, v3 needs c+d or b+d)
+    assert result["nextW"] == [{"stem": "b", "count": 1, "rank": 2}]
