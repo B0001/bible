@@ -37,6 +37,7 @@ first, then new-word unlock recommendations. All Phase 5 flags are opt-in.
 """
 import argparse
 import csv
+import math
 import os
 import re
 import unicodedata
@@ -592,6 +593,28 @@ def grade_longest_passage(bible_df, vocab_stems, min_rate=0.95, lang="en", min_v
     )
 
 
+def corpus_ranks(token_lists):
+    """Frequency rank of every distinct form across the corpus (1 = most
+    frequent). Ties broken by lexicographic form order — deterministic."""
+    counts = Counter()
+    for toks in token_lists:
+        counts.update(toks)
+    ordered = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    return {form: i + 1 for i, (form, _) in enumerate(ordered)}
+
+
+def verse_difficulty(forms, ranks, target=0.95, known=frozenset()):
+    """Smallest vocabulary size N (learning forms in corpus-frequency order,
+    `known` forms free) at which >= target of `forms` is known. None for
+    empty verses. See PHASE12_DESIGN.md D2."""
+    if not forms:
+        return None
+    fallback = len(ranks) + 1
+    eff = sorted(0 if f in known else ranks.get(f, fallback) for f in forms)
+    k = max(1, math.ceil(target * len(eff)))
+    return eff[k - 1]
+
+
 def next_words_to_learn(bible_df, vocab_stems, known_rate=0.95, min_verse_length=1, top_n=20, lang="en"):
     """Rank unknown word forms by how many under-threshold verses learning them alone would unlock.
 
@@ -807,11 +830,16 @@ def main():
     # always written so the Dash app can run the longest-passage algorithm
     # without re-parsing the Bible.
     verses = bible_df["verse"].to_list()
-    knowns, totals = [], []
+    all_forms, knowns, totals = [], [], []
     for verse in verses:
         forms = tokenize_and_stem(verse, args.lang)
+        all_forms.append(forms)
         knowns.append(sum(1 for f in forms if f in vocab_stems))
         totals.append(len(forms))
+    ranks = corpus_ranks(all_forms)
+    difficulties = [
+        verse_difficulty(f, ranks, known=vocab_stems) for f in all_forms
+    ]
 
     if args.decay or args.semantic:
         rates = [
@@ -845,6 +873,7 @@ def main():
     graded = graded.with_columns(
         pl.Series("known_count", knowns, dtype=pl.Int64),
         pl.Series("total_count", totals, dtype=pl.Int64),
+        pl.Series("difficulty_rank", difficulties, dtype=pl.Int64),
     )
 
     with _open_write(args.out) as f:
