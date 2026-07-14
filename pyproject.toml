@@ -21,6 +21,7 @@ dev = [
 ]
 lexical = ["wordfreq>=3"]
 semantic = ["spacy>=3"]
+e2e = ["playwright>=1.40"]
 
 # Anchor pytest's rootdir here so it does not climb into a parent directory and
 # load an unrelated conftest.py. importmode=importlib keeps test modules isolated.
@@ -30,6 +31,7 @@ addopts = "--import-mode=importlib"
 markers = [
     "lexical: tests requiring the [lexical] extra (wordfreq)",
     "semantic: tests requiring the [semantic] extra (spacy + en_core_web_md)",
+    "e2e: browser smoke tests requiring the [e2e] extra (playwright + chromium) and exported site data",
 ]
 
 [tool.setuptools]
