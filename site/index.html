@@ -3,43 +3,45 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#4f46e5">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
   <title>Bible Reader — graded by your vocabulary</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header>
-    <h1>Bible Reader — graded by your vocabulary</h1>
-    <p class="subtitle">Paste the words you know; every verse is scored by how much of it you can read. Aim for the ~95% sweet spot.</p>
+  <header class="topbar">
+    <h1>Graded Reader</h1>
+    <label>Bible
+      <select id="bible-select"></select>
+      <span id="loading" hidden>Loading…</span>
+    </label>
   </header>
 
   <main>
     <div id="error" class="error" hidden></div>
 
-    <section class="controls">
-      <label>Bible
-        <select id="bible-select"></select>
-        <span id="loading" hidden>Loading…</span>
-      </label>
-
-      <section class="level-panel">
-        <label for="level"><span id="level-label">Vocabulary level</span></label>
-        <input type="range" id="level" min="0" max="100" step="1" value="50">
-      </section>
-      <section id="learn-next" class="learn-next"></section>
-
-      <label for="vocab">
-        <span id="vocab-label">Your vocabulary (words, whitespace-separated)</span>
-      </label>
-      <textarea id="vocab" rows="6" placeholder="paste the words you know…"></textarea>
-
-      <div class="row">
-        <label class="grow">Search
-          <input type="search" id="search" placeholder="reference or text…">
-        </label>
-      </div>
-
-      <p id="progress" class="progress"></p>
+    <section class="level-panel">
+      <label for="level"><span id="level-label">Vocabulary level</span></label>
+      <input type="range" id="level" min="0" max="100" step="1" value="50">
+      <p class="subtitle">Paste the words you know; every verse is scored by how much of it you can read. Aim for the ~95% sweet spot.</p>
     </section>
+
+    <section id="learn-next" class="learn-next"></section>
+
+    <div class="row">
+      <label class="grow">Search
+        <input type="search" id="search" placeholder="reference or text…">
+      </label>
+    </div>
+
+    <label for="vocab">
+      <span id="vocab-label">Your vocabulary (words, whitespace-separated)</span>
+    </label>
+    <textarea id="vocab" rows="6" placeholder="paste the words you know…"></textarea>
+
+    <p id="progress" class="progress"></p>
 
     <section id="passage-panel" class="passage" hidden></section>
 
