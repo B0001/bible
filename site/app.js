@@ -335,6 +335,10 @@ function renderLearnNext() {
   const heading = document.createElement('h3');
   heading.textContent = 'Learn next';
   el.learnNext.appendChild(heading);
+  const subtitle = document.createElement('p');
+  subtitle.className = 'learn-next-subtitle';
+  subtitle.textContent = 'tap a word once you know it';
+  el.learnNext.appendChild(subtitle);
   for (const { stem, count } of words) {
     const btn = document.createElement('button');
     btn.className = 'chip';
@@ -557,8 +561,6 @@ async function loadBible(id) {
   // Precompute mark-stripped search text once per bible load.
   searchText = bible.refs.map((r, i) => stripMarks(r + ' ' + bible.verses[i]));
   reads = new Set(loadJSON('reads:' + bible.id, []));
-  el.vocabLabel.textContent =
-    `Your vocabulary (${langName(bible.lang)} words, whitespace-separated)`;
   el.vocab.value = loadJSON('vocab:' + bible.lang, '');
   el.passagePanel.hidden = true;
   rescore();
