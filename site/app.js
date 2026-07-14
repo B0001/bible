@@ -27,6 +27,12 @@ let chapterMedian = 0;        // median word duration for the loaded chapter (he
 let heatmapOn = loadJSON('audio:heatmap', false);  // P10.7 analytics toggles
 let pausesOn = loadJSON('audio:pauses', false);
 const sidecarCache = new Map();
+let corpusRanks = null;       // Phase 12: corpus frequency ranks (dynamically imported)
+let verseDifficulty = null;   // Phase 12: verse difficulty calculator (dynamically imported)
+let ranks = null;             // Map form -> corpus rank, per loaded bible
+let difficulty = [];          // per-verse difficulty (number | null)
+let learned = new Set();      // stems tapped in the learn-next panel
+let levelPos = 50;            // slider position 0..100 (persisted per bible)
 
 // localStorage helpers — can throw in private mode, so wrap everything.
 function loadJSON(key, fallback) {
@@ -112,6 +118,9 @@ function stripMarks(s) {
 
 function score() {
   const vocab = tokenizeVocab(el.vocab.value, bible.lang);
+  // Phase 13: include learned stems in the vocab set
+  for (const s of learned) vocab.add(s);
+
   const n = bible.tokens.length;
   known = new Array(n);
   total = new Array(n);
@@ -124,7 +133,14 @@ function score() {
     total[i] = toks.length;
     rates[i] = toks.length ? k / toks.length : 0;
   }
-  order = Array.from({ length: n }, (_, i) => i).sort((a, b) => rates[b] - rates[a]);
+
+  // Phase 13: compute per-verse difficulty
+  difficulty = bible.tokens.map(toks => verseDifficulty(toks, ranks, 0.95, vocab));
+
+  // Phase 13: sort by learning order (difficulty ascending) instead of comprehension rate
+  const inf = Number.POSITIVE_INFINITY;
+  order = Array.from({ length: n }, (_, i) => i).sort((a, b) =>
+    (difficulty[a] ?? inf) - (difficulty[b] ?? inf) || a - b);
 }
 
 // Longest contiguous run of verses whose aggregate comprehension >= minRate.
@@ -144,6 +160,13 @@ function longestSpan(knownArr, totalArr, minRate) {
     }
   }
   return bestLen > 0 ? [bestI, bestJ] : null;
+}
+
+// Phase 13: maps slider position to vocabulary size on a log scale.
+function levelN() {
+  const max = Math.max(ranks.size, 1);
+  if (max <= 50) return max;
+  return Math.round(50 * Math.pow(max / 50, levelPos / 100));
 }
 
 // ---------------------------------------------------------------- rendering
@@ -445,6 +468,12 @@ async function loadBible(id) {
   el.loading.hidden = true;
   saveJSON('bible', bible.id);
 
+  // Phase 13: initialize corpus ranks and learning state per bible
+  ranks = corpusRanks(bible.tokens);
+  learned = new Set(loadJSON('learned:' + bible.id, []));
+  levelPos = loadJSON('level:' + bible.id, 50);
+  if (el.level) el.level.value = levelPos;
+
   // Audio (P10.3): the manifest entry carries an "audio" index path only when
   // exported with --audio; a failed fetch (deployed site) hides the feature.
   audioIndex = null;
@@ -561,6 +590,7 @@ el.importFile.addEventListener('change', async () => {
 // ---------------------------------------------------------------- init
 
 async function init() {
+  ({ corpusRanks, verseDifficulty } = await import('./rank.js'));
   try {
     const resp = await fetch('data/manifest.json');
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
