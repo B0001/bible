@@ -167,3 +167,99 @@ def test_rank_js_matches_python(tmp_path):
 
     # Compare nextWords: at level N=1, only "b" unlocks v1 (v2 needs both b+c, v3 needs c+d or b+d)
     assert result["nextW"] == [{"stem": "b", "count": 1, "rank": 2}]
+
+
+# --------------------------------------------------------------------------- #
+# P14.4 Mobile UI acceptance checks: manifest, icon, HTML structure, CSS tokens
+# --------------------------------------------------------------------------- #
+
+
+def test_mobile_ui_structure():
+    """Verify P14.4 acceptance requirements: manifest, icon, HTML/CSS structure."""
+    site_dir = os.path.join(_HERE, "site")
+
+    # 1. Manifest and icon files exist
+    manifest_path = os.path.join(site_dir, "manifest.webmanifest")
+    icon_path = os.path.join(site_dir, "icon.svg")
+    assert os.path.exists(manifest_path), f"Missing {manifest_path}"
+    assert os.path.exists(icon_path), f"Missing {icon_path}"
+
+    # 2. Parse manifest JSON and verify required fields
+    with open(manifest_path) as f:
+        manifest = json.load(f)
+    assert manifest["name"] == "Graded Bible Reader"
+    assert manifest["short_name"] == "Reader"
+    assert manifest["display"] == "standalone"
+    assert manifest["start_url"] == "."
+    assert manifest["theme_color"] == "#4f46e5"
+    assert manifest["background_color"] == "#0f1115"
+    assert len(manifest["icons"]) > 0
+    assert manifest["icons"][0]["src"] == "icon.svg"
+    assert manifest["icons"][0]["type"] == "image/svg+xml"
+
+    # 3. Verify icon SVG content (check for key elements)
+    with open(icon_path) as f:
+        icon_svg = f.read()
+    assert '<svg' in icon_svg
+    assert 'viewBox="0 0 100 100"' in icon_svg
+    assert 'fill="#4f46e5"' in icon_svg  # Indigo background
+    assert '<path' in icon_svg  # Book glyph
+
+    # 4. Parse HTML and verify required structure
+    html_path = os.path.join(site_dir, "index.html")
+    with open(html_path) as f:
+        html = f.read()
+
+    # Check for manifest and icon links in head
+    assert 'href="manifest.webmanifest"' in html, "Manifest link missing"
+    assert 'href="icon.svg"' in html, "Icon link missing"
+    assert 'rel="manifest"' in html, "Manifest rel attribute missing"
+
+    # Check for required semantic IDs
+    assert 'id="level"' in html, "Level slider (#level) missing"
+    assert 'id="learn-next"' in html, "Learn-next section (#learn-next) missing"
+    assert 'id="bible-select"' in html, "Bible select (#bible-select) missing"
+    assert 'id="prev-page"' in html, "Prev pagination button missing"
+    assert 'id="next-page"' in html, "Next pagination button missing"
+
+    # Check for topbar styling class
+    assert 'class="topbar"' in html, "Topbar header missing"
+
+    # 5. Parse CSS and verify design tokens
+    css_path = os.path.join(site_dir, "style.css")
+    with open(css_path) as f:
+        css = f.read()
+
+    # Light mode colors
+    assert "--bg:" in css or "--bg :" in css, "CSS var --bg missing"
+    assert "--fg:" in css or "--fg :" in css, "CSS var --fg missing"
+    assert "--accent:" in css or "--accent :" in css, "CSS var --accent missing"
+    assert "--card:" in css or "--card :" in css, "CSS var --card missing"
+    assert "--border:" in css or "--border :" in css, "CSS var --border missing"
+    assert "--muted:" in css or "--muted :" in css, "CSS var --muted missing"
+    assert "--readable-bg:" in css or "--readable-bg :" in css, "CSS var --readable-bg missing"
+    assert "--readable-edge:" in css or "--readable-edge :" in css, "CSS var --readable-edge missing"
+
+    # Dark mode override
+    assert "@media (prefers-color-scheme: dark)" in css, "Dark mode media query missing"
+
+    # Specific color values for dark mode (verify the dark override is present)
+    assert "#0f1115" in css, "Dark mode background color missing"
+    assert "#e5e7eb" in css, "Dark mode foreground color missing"
+
+    # Mobile-first responsive design
+    assert "max-width: 720px" in css or "max-width:720px" in css, "Body max-width missing"
+    assert "@media" in css, "Media queries missing (responsive design)"
+
+    # Topbar sticky positioning
+    assert "sticky" in css, "Sticky positioning missing"
+
+    # Button/control sizing for touch targets (48px minimum)
+    assert "min-height: 48px" in css or "min-height:48px" in css, "Touch target size (48px) missing"
+
+    # Card styling for mobile
+    assert "border-radius" in css, "Border radius styling missing"
+    assert "display: flex" in css or "display:flex" in css, "Flexbox layout missing"
+
+    # RTL support for Hebrew/Greek
+    assert 'dir="rtl"' in html or "direction:" in css, "RTL support missing"
