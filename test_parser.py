@@ -1,5 +1,6 @@
 """Tests for the comprehension-scoring core."""
 import importlib.util
+import os
 from datetime import datetime, timedelta, timezone
 
 import polars as pl
@@ -8,6 +9,7 @@ import pytest
 from parser import (
     SemanticModel,
     comprehension_rate,
+    corpus_ranks,
     grade_longest_passage,
     grade_passages,
     half_life,
@@ -15,6 +17,7 @@ from parser import (
     load_profile,
     load_semantic_model,
     load_vocab,
+    main,
     next_words_to_learn,
     recall_prob,
     record_review,
@@ -22,6 +25,7 @@ from parser import (
     tokenize,
     tokenize_and_stem,
     update_vocab_file,
+    verse_difficulty,
     verse_effort,
     weighted_comprehension_rate,
 )
@@ -761,3 +765,92 @@ def test_semantic_credit_raises_comprehension_rate(tmp_path):
     rate_without = weighted_comprehension_rate("joyful", profile, NOW, decay=False, semantic_model=None)
     rate_with = weighted_comprehension_rate("joyful", profile, NOW, decay=False, semantic_model=model)
     assert rate_with > rate_without
+
+
+# --------------------------------------------------------------------------- #
+# Phase 12: corpus-derived frequency ranks and verse difficulty
+# --------------------------------------------------------------------------- #
+
+
+def test_corpus_ranks_orders_by_count_then_form():
+    """Build ranks from the D2 fixture; verify count-descending, ties by form."""
+    tokens = [["a", "b", "a"], ["b", "c"], ["a", "c", "d", "a"]]
+    ranks = corpus_ranks(tokens)
+    assert ranks == {"a": 1, "b": 2, "c": 3, "d": 4}
+
+
+def test_verse_difficulty_matches_worked_example():
+    """Verse difficulties for the D2 fixture with no known words."""
+    tokens = [["a", "b", "a"], ["b", "c"], ["a", "c", "d", "a"]]
+    ranks = corpus_ranks(tokens)
+    v1_difficulty = verse_difficulty(tokens[0], ranks, known=frozenset())
+    v2_difficulty = verse_difficulty(tokens[1], ranks, known=frozenset())
+    v3_difficulty = verse_difficulty(tokens[2], ranks, known=frozenset())
+    assert [v1_difficulty, v2_difficulty, v3_difficulty] == [2, 3, 4]
+
+
+def test_verse_difficulty_known_words_are_free():
+    """Known words count as effective rank 0 (free); they don't push the difficulty."""
+    tokens = [["a", "b", "a"], ["b", "c"], ["a", "c", "d", "a"]]
+    ranks = corpus_ranks(tokens)
+    v2_difficulty = verse_difficulty(tokens[1], ranks, known=frozenset(["c"]))
+    v3_difficulty = verse_difficulty(tokens[2], ranks, known=frozenset(["c"]))
+    assert v2_difficulty == 2
+    assert v3_difficulty == 4
+
+
+def test_verse_difficulty_empty_verse_is_none():
+    """Empty verses return None (no tokens, nothing to learn)."""
+    ranks = {"a": 1}
+    assert verse_difficulty([], ranks) is None
+
+
+def test_verse_difficulty_unseen_form_falls_back():
+    """Unknown forms fall back to len(ranks) + 1."""
+    ranks = {"a": 1}
+    # ["z"] is not in ranks; fallback is 1 + 1 = 2; difficulty is the 1st rank -> 2
+    result = verse_difficulty(["z"], ranks)
+    assert result == 2
+
+
+def test_cli_writes_difficulty_rank(tmp_path, monkeypatch):
+    """Integration test: main() writes a difficulty_rank column."""
+    import sys
+    import csv
+
+    # Use the sample data that's in the repo
+    bible_path = "sample/nasb_sample.txt"
+    vocab_path = "sample/my_vocab.txt"
+    out_path = str(tmp_path / "out.csv")
+
+    # Monkeypatch sys.argv to call main() with the sample data
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["parser.py", "--bible", bible_path, "--vocab", vocab_path, "--out", out_path],
+    )
+
+    # Run main()
+    main()
+
+    # Verify the CSV was written
+    assert os.path.exists(out_path), f"Output file {out_path} was not created"
+
+    # Read the CSV and check the header
+    with open(out_path, "r") as f:
+        reader = csv.DictReader(f)
+        columns = reader.fieldnames
+        assert columns is not None
+        assert "difficulty_rank" in columns, f"difficulty_rank not in columns: {columns}"
+
+        # Check that at least one non-null difficulty_rank value exists
+        difficulty_ranks = []
+        for row in reader:
+            rank_str = row.get("difficulty_rank", "")
+            if rank_str and rank_str.strip():
+                try:
+                    difficulty_ranks.append(int(rank_str))
+                except ValueError:
+                    pass
+
+        assert len(difficulty_ranks) > 0, "No non-null difficulty_rank values found"
