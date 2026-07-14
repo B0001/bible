@@ -29,6 +29,7 @@ let pausesOn = loadJSON('audio:pauses', false);
 const sidecarCache = new Map();
 let corpusRanks = null;       // Phase 12: corpus frequency ranks (dynamically imported)
 let verseDifficulty = null;   // Phase 12: verse difficulty calculator (dynamically imported)
+let nextWords = null;         // Phase 13: learn-next ranker (dynamically imported)
 let ranks = null;             // Map form -> corpus rank, per loaded bible
 let difficulty = [];          // per-verse difficulty (number | null)
 let learned = new Set();      // stems tapped in the learn-next panel

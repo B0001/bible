@@ -57,6 +57,20 @@ header.topbar {
   z-index: 100;
 }
 
+header.topbar label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+header.topbar select {
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+}
+
 header h1 {
   font-size: 1.25rem;
   font-weight: bold;
