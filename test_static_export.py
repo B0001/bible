@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from parser import corpus_ranks, tokenize_and_stem, verse_difficulty, next_words
+from parser import corpus_ranks, tokenize_and_stem, verse_difficulty
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
