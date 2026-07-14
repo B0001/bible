@@ -43,8 +43,6 @@
 
     <p id="progress" class="progress"></p>
 
-    <section id="passage-panel" class="passage" hidden></section>
-
     <!-- Local-only audio mode (P10.3): appears when the site was exported with
          `export_static.py --audio` AND is served locally with the audio
          directory in place (e.g. `python -m http.server` from the repo root).
@@ -85,7 +83,14 @@
       </div>
 
       <div class="row">
-        <button id="find-passage">Find longest passage</button>
+        <button id="find-passage">Find longest passages</button>
+        <label title="Minimum combined comprehension for a passage, at your current level">min %
+          <input type="number" id="passage-rate" min="50" max="100" value="95">
+        </label>
+      </div>
+      <section id="passage-panel" class="passage" hidden></section>
+
+      <div class="row">
         <button id="export-data">Export data</button>
         <button id="import-data">Import data</button>
         <input type="file" id="import-file" accept="application/json" hidden>
