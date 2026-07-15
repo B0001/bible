@@ -99,10 +99,12 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
 - **`test_site_smoke.py`** — Playwright browser smoke tests (marked
   `@pytest.mark.e2e`) that serve `site/` and drive it in headless Chromium:
   init actually runs (catches strict-mode ReferenceErrors unit tests can't),
-  the Bible dropdown populates, verses + learn-next chips render, chip taps
-  rescore, no horizontal scroll at 360px, dark-mode background. Skips when
-  playwright (`pip install '.[e2e]'` + `playwright install chromium`) or
-  exported site data (`scripts/export_static.py`) is missing.
+  the read route auto-renders the longest passage at the current level, Done
+  marks verses read and advances the queue, the slider rebuilds the queue,
+  browse/settings routes show the table and vocab box, no horizontal scroll
+  at 360px, dark-mode background. Skips when playwright (`pip install
+  '.[e2e]'` + `playwright install chromium`) or exported site data
+  (`scripts/export_static.py`) is missing.
 - **`sample/`** — runnable sample data: `nasb_sample.txt` (12 verses),
   `my_vocab.txt` (EF top-100 English words), `hebrew_vocab.txt`,
   `greek_vocab.txt` (starter vocabularies for the original languages).
