@@ -2,9 +2,12 @@
 
 Drives the real site in headless Chromium and asserts the things a unit test
 can't see: the module actually initializes (a single undeclared variable once
-killed init() silently — see d33c792), the Bible dropdown populates, verses
-render, learn-next chips work, and the P14 mobile acceptance checks hold
-(no horizontal scroll at 360px, dark-mode background).
+killed init() silently — see d33c792), the read route auto-renders the longest
+passage at the current level, Done/next walk the passage queue, the slider
+rebuilds it, the browse/settings hash routes show the table and vocab box, and
+the mobile acceptance checks hold (no horizontal scroll at 360px, dark-mode
+background). Tests share one page (module-scoped fixture) and are order
+dependent by design.
 
 Requires `pip install '.[e2e]'` + `playwright install chromium`, and exported
 site data (`python scripts/export_static.py`). Skips itself when either is
@@ -69,7 +72,8 @@ def loaded_page(site_url):
         page.on("pageerror", lambda e: errors.append(str(e)))
         page.goto(site_url, wait_until="domcontentloaded", timeout=30000)
         page.wait_for_function(
-            "document.querySelectorAll('#verse-body tr').length > 0", timeout=60000
+            "document.querySelectorAll('#reader .reader-text, #reader .reader-empty').length > 0",
+            timeout=60000,
         )
         yield page, errors
         browser.close()
@@ -88,42 +92,66 @@ def test_bible_dropdown_populates(loaded_page):
     assert options == expected
 
 
-def test_verses_and_learn_next_render(loaded_page):
+def test_read_route_shows_passage_by_default(loaded_page):
     page, _ = loaded_page
-    assert page.eval_on_selector_all("#verse-body tr", "els => els.length") > 0
+    assert not page.eval_on_selector("#route-read", "el => el.hidden")
+    assert page.eval_on_selector("#route-browse", "el => el.hidden")
+    head = page.eval_on_selector("#reader .reader-head", "el => el.textContent")
+    assert head  # a ref range like "john 13:33 – john 16:18"
+    count = page.eval_on_selector("#reader-count", "el => el.textContent")
+    assert count.startswith("Passage 1 of")
+
+
+def test_learn_next_chips_render(loaded_page):
+    page, _ = loaded_page
     assert page.eval_on_selector_all("#learn-next .chip", "els => els.length") > 0
+
+
+def test_done_marks_read_and_advances(loaded_page):
+    page, errors = loaded_page
+    page.click("#reader-done")
+    page.wait_for_function(
+        "document.getElementById('reader-count').textContent.startsWith('Passage 2 of')",
+        timeout=15000,
+    )
+    progress = page.eval_on_selector("#progress", "el => el.textContent")
+    assert progress and not progress.startswith("0 of")
+    assert errors == []
+
+
+def test_slider_rebuilds_reader_queue(loaded_page):
+    page, errors = loaded_page
+    page.fill("#level", "100")
+    page.dispatch_event("#level", "input")
+    page.wait_for_function(
+        "document.getElementById('reader-count').textContent.startsWith('Passage 1 of')",
+        timeout=15000,
+    )
+    meta = page.eval_on_selector("#reader .reader-meta", "el => el.textContent")
+    assert "verses" in meta
+    assert errors == []
+
+
+def test_browse_route_shows_table(loaded_page):
+    page, _ = loaded_page
+    page.evaluate("location.hash = '#browse'")
+    page.wait_for_function("!document.getElementById('route-browse').hidden", timeout=5000)
+    assert page.eval_on_selector_all("#verse-body tr", "els => els.length") > 0
+    page.evaluate("location.hash = '#read'")
+
+
+def test_settings_route_has_vocab_and_export(loaded_page):
+    page, _ = loaded_page
+    page.evaluate("location.hash = '#settings'")
+    page.wait_for_function("!document.getElementById('route-settings').hidden", timeout=5000)
+    assert page.eval_on_selector("#vocab", "el => !el.closest('section').hidden")
+    assert page.eval_on_selector("#export-data", "el => !!el")
+    page.evaluate("location.hash = '#read'")
 
 
 def test_no_horizontal_scroll_at_360(loaded_page):
     page, _ = loaded_page
     assert page.evaluate("document.documentElement.scrollWidth") <= 360
-
-
-def test_learn_next_chip_tap_rescores(loaded_page):
-    page, errors = loaded_page
-    first = page.eval_on_selector("#learn-next .chip", "el => el.textContent")
-    page.click("#learn-next .chip")
-    page.wait_for_function(
-        f"document.querySelector('#learn-next .chip')?.textContent !== {json.dumps(first)}",
-        timeout=15000,
-    )
-    assert errors == []
-
-
-def test_find_passages_lists_results(loaded_page):
-    page, errors = loaded_page
-    page.eval_on_selector("#advanced", "el => el.open = true")
-    page.click("#find-passage")
-    page.wait_for_function(
-        "document.querySelectorAll('#passage-panel details.passage').length > 0",
-        timeout=15000,
-    )
-    heads = page.eval_on_selector_all(
-        "#passage-panel .passage-head", "els => els.map(e => e.textContent)"
-    )
-    assert len(heads) > 1  # a list, not just the single longest
-    assert "verses" in heads[0]
-    assert errors == []
 
 
 def test_dark_mode_background(loaded_page):
