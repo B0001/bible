@@ -92,6 +92,78 @@ ENGLISH_NAMES = {
     "3MA": "3 Maccabees", "1ES": "1 Esdras", "2ES": "2 Esdras",
 }
 
+# Traditional Hebrew book names. **Unvocalized on purpose.** These are the
+# standard citation forms, and hand-transcribed niqqud would be a steady source
+# of silent errors in a table meant to be authoritative — wrong pointing is
+# worse than none. The app strips niqqud before tokenizing anyway, so nothing
+# downstream depends on it.
+#
+# OT names are the Tanakh titles (which are what the WLC text is). NT names are
+# the Delitzsch Hebrew NT's, in their short conventional forms rather than the
+# full "הבשורה על פי X" headings.
+HEBREW_NAMES = {
+    "GEN": "בראשית", "EXO": "שמות", "LEV": "ויקרא", "NUM": "במדבר",
+    "DEU": "דברים", "JOS": "יהושע", "JDG": "שופטים", "RUT": "רות",
+    "1SA": "שמואל א", "2SA": "שמואל ב", "1KI": "מלכים א", "2KI": "מלכים ב",
+    "1CH": "דברי הימים א", "2CH": "דברי הימים ב", "EZR": "עזרא",
+    "NEH": "נחמיה", "EST": "אסתר", "JOB": "איוב", "PSA": "תהלים",
+    "PRO": "משלי", "ECC": "קהלת", "SNG": "שיר השירים", "ISA": "ישעיהו",
+    "JER": "ירמיהו", "LAM": "איכה", "EZK": "יחזקאל", "DAN": "דניאל",
+    "HOS": "הושע", "JOL": "יואל", "AMO": "עמוס", "OBA": "עובדיה",
+    "JON": "יונה", "MIC": "מיכה", "NAM": "נחום", "HAB": "חבקוק",
+    "ZEP": "צפניה", "HAG": "חגי", "ZEC": "זכריה", "MAL": "מלאכי",
+    "MAT": "מתי", "MRK": "מרקוס", "LUK": "לוקס", "JHN": "יוחנן",
+    "ACT": "מעשי השליחים", "ROM": "אל הרומיים", "1CO": "אל הקורנתים א",
+    "2CO": "אל הקורנתים ב", "GAL": "אל הגלטים", "EPH": "אל האפסים",
+    "PHP": "אל הפילפיים", "COL": "אל הקולסים", "1TH": "אל התסלוניקים א",
+    "2TH": "אל התסלוניקים ב", "1TI": "אל טימותיוס א", "2TI": "אל טימותיוס ב",
+    "TIT": "אל טיטוס", "PHM": "אל פילימון", "HEB": "אל העברים",
+    "JAS": "אגרת יעקב", "1PE": "אגרת פטרוס א", "2PE": "אגרת פטרוס ב",
+    "1JN": "אגרת יוחנן א", "2JN": "אגרת יוחנן ב", "3JN": "אגרת יוחנן ג",
+    "JUD": "אגרת יהודה", "REV": "חזון יוחנן",
+    # Of the deuterocanon only Sirach has a surviving Hebrew original.
+    "SIR": "בן סירא",
+}
+
+# Greek book names, polytonic. NT titles are the traditional ones — these match
+# the Byzantine text this corpus actually carries. OT titles are the Septuagint
+# names, included because they are standard reference data even though no Greek
+# OT is in the corpus; two LXX conventions worth knowing:
+#   - Samuel and Kings are the four books of Βασιλειῶν (Kingdoms), so 1SA-2KI
+#     map to Α΄-Δ΄ rather than to two separate pairs.
+#   - LXX Ἔσδρας Β΄ covers Ezra *and* Nehemiah; Νεεμίας is the name Greek
+#     Orthodox Bibles give the latter when they print it separately.
+# 2ES (4 Ezra) is deliberately absent — it survives in Latin and Syriac, not
+# Greek, so a Greek title there would be an invention.
+GREEK_NAMES = {
+    "GEN": "Γένεσις", "EXO": "Ἔξοδος", "LEV": "Λευιτικόν", "NUM": "Ἀριθμοί",
+    "DEU": "Δευτερονόμιον", "JOS": "Ἰησοῦς Ναυῆ", "JDG": "Κριταί",
+    "RUT": "Ῥούθ", "1SA": "Βασιλειῶν Α΄", "2SA": "Βασιλειῶν Β΄",
+    "1KI": "Βασιλειῶν Γ΄", "2KI": "Βασιλειῶν Δ΄",
+    "1CH": "Παραλειπομένων Α΄", "2CH": "Παραλειπομένων Β΄",
+    "EZR": "Ἔσδρας Β΄", "NEH": "Νεεμίας", "EST": "Ἐσθήρ", "JOB": "Ἰώβ",
+    "PSA": "Ψαλμοί", "PRO": "Παροιμίαι", "ECC": "Ἐκκλησιαστής",
+    "SNG": "Ἆσμα Ἀσμάτων", "ISA": "Ἠσαΐας", "JER": "Ἰερεμίας",
+    "LAM": "Θρῆνοι", "EZK": "Ἰεζεκιήλ", "DAN": "Δανιήλ", "HOS": "Ὡσηέ",
+    "JOL": "Ἰωήλ", "AMO": "Ἀμώς", "OBA": "Ἀβδιού", "JON": "Ἰωνᾶς",
+    "MIC": "Μιχαίας", "NAM": "Ναούμ", "HAB": "Ἀμβακούμ", "ZEP": "Σοφονίας",
+    "HAG": "Ἀγγαῖος", "ZEC": "Ζαχαρίας", "MAL": "Μαλαχίας",
+    "MAT": "Κατὰ Ματθαῖον", "MRK": "Κατὰ Μᾶρκον", "LUK": "Κατὰ Λουκᾶν",
+    "JHN": "Κατὰ Ἰωάννην", "ACT": "Πράξεις Ἀποστόλων", "ROM": "Πρὸς Ῥωμαίους",
+    "1CO": "Πρὸς Κορινθίους Α΄", "2CO": "Πρὸς Κορινθίους Β΄",
+    "GAL": "Πρὸς Γαλάτας", "EPH": "Πρὸς Ἐφεσίους", "PHP": "Πρὸς Φιλιππησίους",
+    "COL": "Πρὸς Κολοσσαεῖς", "1TH": "Πρὸς Θεσσαλονικεῖς Α΄",
+    "2TH": "Πρὸς Θεσσαλονικεῖς Β΄", "1TI": "Πρὸς Τιμόθεον Α΄",
+    "2TI": "Πρὸς Τιμόθεον Β΄", "TIT": "Πρὸς Τίτον", "PHM": "Πρὸς Φιλήμονα",
+    "HEB": "Πρὸς Ἑβραίους", "JAS": "Ἰακώβου", "1PE": "Πέτρου Α΄",
+    "2PE": "Πέτρου Β΄", "1JN": "Ἰωάννου Α΄", "2JN": "Ἰωάννου Β΄",
+    "3JN": "Ἰωάννου Γ΄", "JUD": "Ἰούδα", "REV": "Ἀποκάλυψις Ἰωάννου",
+    "TOB": "Τωβίτ", "JDT": "Ἰουδίθ", "WIS": "Σοφία Σαλωμῶνος",
+    "SIR": "Σοφία Σιράχ", "BAR": "Βαρούχ", "LJE": "Ἐπιστολὴ Ἰερεμίου",
+    "MAN": "Προσευχὴ Μανασσῆ", "1MA": "Μακκαβαίων Α΄",
+    "2MA": "Μακκαβαίων Β΄", "3MA": "Μακκαβαίων Γ΄", "1ES": "Ἔσδρας Α΄",
+}
+
 # Statenvertaling interleaves Baruch between Malachi and Matthew.
 STATEN67 = OT39 + ["BAR"] + NT27
 
@@ -217,7 +289,17 @@ def export_bible(entry, site_dir, out_dir):
 
 def write_books_csv(out_dir, bible_ids, names_by_bible):
     """One row per USFM code that any translation carries, ordered by the
-    widest canon so deuterocanonical books land in their real position."""
+    widest canon so deuterocanonical books land in their real position.
+
+    Two kinds of name column, kept separate on purpose:
+
+    - `english` / `hebrew` / `greek` are curated canonical names — the answer
+      to "what is this book called in that language".
+    - the per-translation columns (`nasb`, `wlc`, ...) are the book strings as
+      they literally appear in that text's refs, so they stay joinable against
+      the Parquet `ref` field. For `wlc` and `gnt` those are Latin
+      abbreviations; the real names live in the `hebrew` / `greek` columns.
+    """
     order, seen = [], set()
     for codes in (SYNODAL78, STATEN67, PROT66):
         for code in codes:
@@ -229,11 +311,14 @@ def write_books_csv(out_dir, bible_ids, names_by_bible):
     path = os.path.join(out_dir, "books.csv")
     with open(path, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["usfm", "canon_order", "testament", "english"] + bible_ids)
+        writer.writerow(
+            ["usfm", "canon_order", "testament", "english", "hebrew", "greek"] + bible_ids
+        )
         for i, code in enumerate(present, 1):
             testament = "OT" if code not in NT27 else "NT"
             writer.writerow(
-                [code, i, testament, ENGLISH_NAMES.get(code, "")]
+                [code, i, testament, ENGLISH_NAMES.get(code, ""),
+                 HEBREW_NAMES.get(code, ""), GREEK_NAMES.get(code, "")]
                 + [names_by_bible[b].get(code, "") for b in bible_ids]
             )
     print(f"  books.csv        {len(present)} books x {len(bible_ids)} translations")
@@ -311,19 +396,40 @@ a text. Everything published here is vocabulary-independent.
 
 ## books.csv
 
-One row per USFM book code, one column per translation with that book's name
-in its own language. Canons differ — Statenvertaling carries Baruch, the
-Russian Synodal text carries the full Orthodox deuterocanon and orders the NT
-with the Catholic epistles before the Pauline ones — so blank cells mean the
-book is absent from that translation, not missing data.
+One row per USFM book code. There are two kinds of name column and the
+difference matters:
 
-Two caveats worth your scepticism:
+- **`english`, `hebrew`, `greek`** are curated canonical names — what the book
+  is actually called in that language.
+- **The per-translation columns** (`nasb`, `wlc`, `synodal`, …) hold the book
+  string exactly as it appears in that text's references, so they join against
+  the `ref` field in the Parquet files. For `wlc` and `gnt` those are the Latin
+  abbreviations the source files ship (`Gen`, `Matt`) — the real names are in
+  `hebrew` and `greek`.
 
-- `wlc` and `gnt` book names are the Latin abbreviations their source files
-  use (`Gen`, `Matt`), **not** Hebrew or Greek book names. Corrections welcome.
-- The Synodal `1ES`/`2ES` mapping is inferred from canon position rather than
-  from the labels, which read "1-я Ездры"/"2-я Ездры". If you know the Synodal
-  numbering well, please check it.
+Canons differ — Statenvertaling carries Baruch, the Russian Synodal text
+carries the full Orthodox deuterocanon and orders the NT with the Catholic
+epistles before the Pauline ones — so a blank cell means the book is absent
+from that translation, not that data is missing.
+
+Notes on the Hebrew and Greek columns:
+
+- Hebrew names are **unvocalized**, which is the standard citation form.
+  Hand-transcribed niqqud is a reliable source of silent errors and wrong
+  pointing is worse than none. OT names are the Tanakh titles; NT names are
+  the Delitzsch Hebrew NT's, in short form. Of the deuterocanon only Sirach
+  has a Hebrew original, so the rest are blank.
+- Greek is polytonic. NT titles are the traditional ones and match the
+  Byzantine text here. **OT titles are Septuagint names**, included as
+  reference data even though this corpus has no Greek OT — note that Samuel
+  and Kings are the four books of Βασιλειῶν, and that LXX Ἔσδρας Β΄ covers
+  Ezra and Nehemiah together. `2ES` has no Greek title because 4 Ezra survives
+  in Latin and Syriac, not Greek.
+
+One mapping worth your scepticism: the Synodal `1ES`/`2ES` assignment is
+inferred from canon position rather than from the labels, which read
+"1-я Ездры"/"2-я Ездры". If you know the Synodal numbering well, please check
+it.
 
 ## Licence
 
