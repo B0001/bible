@@ -562,36 +562,6 @@ table {
   color: var(--muted);
 }
 
-/* Advanced details */
-details#advanced {
-  margin-top: 24px;
-  border-top: 1px solid var(--border);
-  padding-top: 16px;
-}
-
-details#advanced summary {
-  min-height: 48px;
-  display: flex;
-  align-items: center;
-  color: var(--muted);
-  cursor: pointer;
-  font-weight: 600;
-  user-select: none;
-}
-
-details#advanced summary:hover {
-  color: var(--fg);
-}
-
-details#advanced[open] summary {
-  color: var(--fg);
-  margin-bottom: 16px;
-}
-
-details#advanced > div {
-  margin-top: 12px;
-}
-
 /* Focus visibility (required) */
 :focus-visible {
   outline: 2px solid var(--accent);

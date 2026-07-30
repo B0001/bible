@@ -297,6 +297,79 @@ audio never ships with the public site. Stretch: listening-mode reviews feeding
 the Phase 5 SRS model (P10.4). This retires the old BibleGateway-scraping
 "audiobible" scripts.
 
+## Phase 11 — Cleanup (ponytail audit) ✅ DONE
+
+Full design in [`PHASE11_DESIGN.md`](PHASE11_DESIGN.md). Deletions and
+behavior-preserving shrinks found by an over-engineering audit; no new
+features.
+
+- **P11.1** ✅ Deleted six vendored Snowball stemmers no Bible in `bibles.toml` uses.
+- **P11.2** ✅ Deleted the Spark-era infra helpers (`start.py`, the two builder userdata scripts, `minio-start.sh`) and their doc references.
+- **P11.3** ✅ Removed `s3://` output support from `parser.py`/`dash_app.py` and the `[s3]` extra.
+- **P11.4** ✅ `SemanticModel` uses spaCy `Doc.similarity` instead of a hand-rolled numpy cosine.
+- **P11.5** ✅ Deleted the unused `grade()` and `stem_tokens()` functions.
+- **P11.6** ✅ Dropped the dead `en_stopwords` key from the static-site manifest.
+- **P11.7** ✅ Dropped the dead initial DataTable styles in `dash_app.py`.
+
+## Phase 12 — Universal learning order (corpus frequency ranks) ✅ DONE
+
+Full design in [`PHASE12_DESIGN.md`](PHASE12_DESIGN.md). One number per verse,
+in every language, saying *when* to read it: rank each form by its frequency
+**within the Bible being read**, then define a verse's difficulty as the
+vocabulary size N at which ≥95% of its words are known. Sorting by difficulty
+ascending is the learning order. No downloads, no new deps, works identically
+for all 12 Bibles. Pipeline + data only — the UI lands in Phase 13.
+
+- **P12.1/P12.2** ✅ `corpus_ranks()` and `verse_difficulty()` in `parser.py`; graded CSVs always carry a `difficulty_rank` column.
+- **P12.3** ✅ Tests, including the design doc's worked example as a fixture.
+- **P12.4** ✅ Deleted the superseded `scripts/build_english_poset.py`.
+- **P12.5** ✅ `site/rank.js` mirrors the algorithm in JS, with a node parity test against the Python side.
+
+## Phase 13 — Learning mode: level slider and learn-next ranker ✅ DONE
+
+Full design in [`PHASE13_DESIGN.md`](PHASE13_DESIGN.md). Makes "read in
+learning order" the static reader's default: a log-scaled vocabulary-level
+slider sets N ("assume I know the top-N words of this Bible"), verses with
+`difficulty ≤ N` are readable now, and the headline "Learn next" panel ranks
+the ten stems that would unlock the most currently-unreadable verses. Tapped
+chips join the known set and rescore instantly. `site/` only.
+
+- **P13.1** ✅ app.js state (`ranks`, `difficulty`, `learned`, `levelPos`), learning-order sort, `levelN()`.
+- **P13.2/P13.3** ✅ Level slider in `index.html`; `nextWords()` in `rank.js` + `renderLearnNext()` in app.js.
+- **P13.4** ✅ Controls simplified — the rate/unknown/passage/export controls moved into an `<details id="advanced">`; level/learn-next/vocab/search stay primary; `learned:`/`level:` keys added to export/import.
+- **P13.5** ✅ `nextWords` parity test.
+
+## Phase 14 — Mobile-first UI ✅ DONE
+
+Full design in [`PHASE14_DESIGN.md`](PHASE14_DESIGN.md). Restyle of `site/`
+into a phone-first app: system fonts, CSS custom properties with a dark-mode
+override, cards instead of a data grid, ≥48 px tap targets, no horizontal
+scroll at 360 px. No behavior changes; `dash_app.py` untouched.
+
+- **P14.1** ✅ `index.html` restructured (sticky topbar, ordered main), plus `manifest.webmanifest` and `icon.svg`.
+- **P14.2** ✅ `style.css` rewritten mobile-first.
+- **P14.3** ✅ Copy pass; explanatory paragraphs removed.
+- **P14.4** ✅ Playwright acceptance checks (no horizontal scroll, tap-target heights, dark-mode background).
+
+Follow-ups after P14.4, before Phase 15: a browser smoke suite for the static
+reader, an init-breaking `nextWords` reference fix, level-aware find-passages
+with a top-10 list, and a progress line counted against level-readable verses.
+
+## Phase 15 — Reader-first UI: routes, auto-passage reader, subtraction ✅ DONE
+
+Full design in [`PHASE15_DESIGN.md`](PHASE15_DESIGN.md). Turns the static
+reader from a data explorer into a reader: the longest readable passage at
+your level *is* the home screen. Three hash routes (`read` default, `browse`,
+`settings`), the table and setup controls move off the primary screen, and the
+filters superseded by difficulty ordering are deleted outright. `site/` only.
+
+- **P15.1** ✅ Route-based body: `#route-read` / `#route-browse` / `#route-settings`; existing ids preserved.
+- **P15.2** ✅ Reader-first `app.js`: router, auto-passage reader (`topSpans`, 120-verse chunking, prev/Done/next), filter deletions.
+- **P15.3** ✅ Reader styles, topbar nav, chip strip.
+- **P15.4** ✅ `test_site_smoke.py` rewritten for the reader UI (10 e2e tests).
+- **P15.5** ✅ Docs + stale-assertion cleanup.
+- **P15.6** ✅ Integration verification: `ruff` clean, 151 passed / 8 skipped with all 10 e2e browser tests running (not skipping), and a 360×800 sweep of both routes and RTL Hebrew with zero console errors. Fixed the dead `details#advanced` CSS P15.1 orphaned, and pinned ruff's rule set (see below).
+
 ## 5. Out of scope (for now)
 - Authentication / multi-user accounts.
 - Cloud cost optimization of the build images (the Dockerfile size experiments).
