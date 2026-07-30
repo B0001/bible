@@ -88,6 +88,21 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   OSIS XML; strips morphhb's `/` morpheme markers), `convert_gnt.py` (Greek NT
   from byztxt CSV files), `convert_delitzsch_nt.py` (Hebrew NT from
   HebrewNewTestament/HebDelitzsch OSIS).
+- **`scripts/export_dataset.py`** — builds a HuggingFace-ready dataset in
+  `out/dataset/` from `site/data/` (run `export_static.py` first): `books.csv`
+  (one row per USFM book code, one column per translation with its native book
+  name) plus `data/<id>/train-00000.parquet` per translation and a README with
+  the HF `configs:` block. CSV for the tiny book table because it exists to
+  attract corrections; Parquet for the ~370k metric rows because it is the
+  Hub's native format and sidesteps CSV's encoding traps around Hebrew/Arabic.
+  **Exports no verse text** — refs and derived metrics only, which is what
+  keeps copyrighted translations publishable. Only vocabulary-independent
+  columns ship (`total_count`, `difficulty_rank`); `comprehension_rate` and
+  `known_count` describe one reader's vocab, not a text. Book mapping is
+  positional per `BOOK_ORDER`, guarded by `validate_books()` — canons differ
+  (Statenvertaling inserts Baruch; the Russian Synodal text carries the
+  Orthodox deuterocanon and puts the Catholic epistles before the Pauline
+  ones), so a source whose order drifts fails loudly instead of mislabelling.
 - **`test_parser.py` + `test_dash_app.py`** — 150+ pytest unit tests covering the
   scoring core, tokenizers, Phase 5 recall model, study queue, lexical effort,
   semantic credit, longest passage, corpus ranks / verse difficulty (Phase 12),
@@ -111,6 +126,9 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
 
 **Data flow:** `scripts/convert_*.py` → `data/*.txt` → `parser.py --lang X` →
 `out/<bible>_graded.csv` (listed in `bibles.toml`) → `dash_app.py`.
+A second branch feeds the static site and the published dataset:
+`data/*.txt` → `scripts/export_static.py` → `site/data/*.json` →
+`scripts/export_dataset.py` → `out/dataset/` (HuggingFace).
 
 ## Running
 
