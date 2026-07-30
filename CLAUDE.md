@@ -90,8 +90,11 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   HebrewNewTestament/HebDelitzsch OSIS).
 - **`scripts/export_dataset.py`** — builds a HuggingFace-ready dataset in
   `out/dataset/` from `site/data/` (run `export_static.py` first): `books.csv`
-  (one row per USFM book code, one column per translation with its native book
-  name) plus `data/<id>/train-00000.parquet` per translation and a README with
+  (one row per USFM book code; curated `english`/`hebrew`/`greek` name columns
+  plus one column per translation holding the book string as it literally
+  appears in that text's refs, so those stay joinable against the Parquet
+  `ref` — `wlc`/`gnt` ship Latin abbreviations, the real names are in the
+  curated columns) plus `data/<id>/train-00000.parquet` per translation and a README with
   the HF `configs:` block. CSV for the tiny book table because it exists to
   attract corrections; Parquet for the ~370k metric rows because it is the
   Hub's native format and sidesteps CSV's encoding traps around Hebrew/Arabic.

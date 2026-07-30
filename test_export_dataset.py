@@ -15,6 +15,8 @@ import pytest  # noqa: E402
 from export_dataset import (  # noqa: E402
     BOOK_ORDER,
     ENGLISH_NAMES,
+    GREEK_NAMES,
+    HEBREW_NAMES,
     NT27,
     OT39,
     PROT66,
@@ -24,6 +26,11 @@ from export_dataset import (  # noqa: E402
     split_ref,
     validate_books,
 )
+
+
+def _in_block(text, lo, hi):
+    """Every letter of `text` sits in the Unicode block [lo, hi]."""
+    return all(lo <= ord(c) <= hi for c in text if c.isalpha())
 
 
 # ------------------------------------------------------------ ref parsing
@@ -68,6 +75,58 @@ def test_every_code_has_an_english_name():
     for codes in (SYNODAL78, STATEN67, PROT66):
         for code in codes:
             assert ENGLISH_NAMES.get(code), code
+
+
+# ------------------------------------------------------------ Hebrew / Greek names
+
+def test_hebrew_covers_the_whole_protestant_canon():
+    """Both testaments: Tanakh names for the OT, Delitzsch names for the NT."""
+    missing = [c for c in PROT66 if not HEBREW_NAMES.get(c)]
+    assert missing == []
+
+
+def test_greek_covers_the_whole_protestant_canon():
+    missing = [c for c in PROT66 if not GREEK_NAMES.get(c)]
+    assert missing == []
+
+
+def test_hebrew_names_are_actually_hebrew():
+    """Guards against a Latin abbreviation slipping back in — the bug that
+    prompted these columns (wlc shipped 'Gen', not 'בראשית')."""
+    for code, name in HEBREW_NAMES.items():
+        assert _in_block(name, 0x0590, 0x05FF), (code, name)
+
+
+def test_greek_names_are_actually_greek():
+    for code, name in GREEK_NAMES.items():
+        assert _in_block(name, 0x0370, 0x1FFF), (code, name)
+
+
+def test_hebrew_names_are_unvocalized():
+    """Deliberate choice: niqqud (U+0591-U+05C7) is omitted, so no partially
+    or wrongly pointed name can creep in."""
+    for code, name in HEBREW_NAMES.items():
+        assert not any(0x0591 <= ord(c) <= 0x05C7 for c in name), (code, name)
+
+
+def test_no_duplicate_hebrew_or_greek_names():
+    """Two books sharing a name means one is mislabelled."""
+    for label, names in (("hebrew", HEBREW_NAMES), ("greek", GREEK_NAMES)):
+        values = list(names.values())
+        assert len(values) == len(set(values)), (label, "duplicate name")
+
+
+def test_septuagint_kingdoms_and_esdras_conventions():
+    """The two LXX conventions most likely to be 'corrected' into being wrong."""
+    assert GREEK_NAMES["1SA"] == "Βασιλειῶν Α΄"
+    assert GREEK_NAMES["2KI"] == "Βασιλειῶν Δ΄"
+    # 4 Ezra survives in Latin/Syriac, not Greek — a title here would be invented.
+    assert "2ES" not in GREEK_NAMES
+
+
+def test_only_sirach_has_a_hebrew_deuterocanonical_name():
+    deutero = set(SYNODAL78) - set(PROT66)
+    assert {c for c in deutero if HEBREW_NAMES.get(c)} == {"SIR"}
 
 
 def test_deuterocanon_is_additive():
