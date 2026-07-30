@@ -140,6 +140,19 @@ def test_statenvertaling_inserts_baruch_between_malachi_and_matthew():
     assert STATEN67[38:41] == ["MAL", "BAR", "MAT"]
 
 
+def test_synodal_esdras_mapping():
+    """The source renumbers the Esdras books, so its labels are off by one:
+    "Ездры"=Ezra, "1-я Ездры"=1 Esdras (Greek), "2-я Ездры"=2 Esdras/4 Ezra.
+    Trusting the labels would put 1ES and 2ES one book too early."""
+    # Ezra and Nehemiah stay adjacent and canonical, right after Manasseh.
+    assert SYNODAL78[14:18] == ["MAN", "EZR", "NEH", "1ES"]
+    # 1 Esdras sits between Nehemiah and Tobit; 4 Ezra trails the Maccabees.
+    assert SYNODAL78[SYNODAL78.index("1ES") + 1] == "TOB"
+    assert SYNODAL78[SYNODAL78.index("3MA") + 1] == "2ES"
+    # 2ES is the last book before the NT opens.
+    assert SYNODAL78[SYNODAL78.index("2ES") + 1] == "MAT"
+
+
 def test_synodal_orders_catholic_epistles_before_pauline():
     """Orthodox NT order — this is exactly why Synodal cannot use PROT66."""
     nt = SYNODAL78[SYNODAL78.index("MAT"):]

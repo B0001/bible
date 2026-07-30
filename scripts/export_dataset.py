@@ -171,11 +171,19 @@ STATEN67 = OT39 + ["BAR"] + NT27
 # is interleaved through the OT, and the NT runs in Orthodox order (Catholic
 # epistles before the Pauline ones). Hence an explicit sequence.
 #
-# The two Esdras entries are the one judgement call here. getbible labels them
-# "1-я Ездры" (immediately after Nehemiah) and "2-я Ездры" (after Maccabees);
-# read against the standard Synodal contents those are the books Russian
-# Bibles number 2 Ездры and 3 Ездры, i.e. 1 Esdras (1ES) and 2 Esdras (2ES).
-# Flagged in the README as the mapping most worth a second opinion.
+# The Esdras books need care because getbible renumbers them. The Synodal
+# canon has three, and the source labels them one lower:
+#
+#   Synodal name   getbible label   is                          USFM
+#   1 Ездры        "Ездры"          Ezra                        EZR
+#   -              "Неемии"         Nehemiah                    NEH
+#   2 Ездры        "1-я Ездры"      1 Esdras (Greek)            1ES
+#   3 Ездры        "2-я Ездры"      2 Esdras (Latin / 4 Ezra)   2ES
+#
+# i.e. getbible drops the "1" from canonical Ezra, then numbers the two
+# deuterocanonical books from 1 — so its "N-я Ездры" is Synodal's "N+1 Ездры".
+# Take the labels at face value and 1ES/2ES both land one book too early.
+# test_synodal_esdras_mapping pins this.
 SYNODAL78 = [
     "GEN", "EXO", "LEV", "NUM", "DEU", "JOS", "JDG", "RUT", "1SA", "2SA",
     "1KI", "2KI", "1CH", "2CH", "MAN", "EZR", "NEH", "1ES", "TOB", "JDT",
@@ -426,10 +434,19 @@ Notes on the Hebrew and Greek columns:
   Ezra and Nehemiah together. `2ES` has no Greek title because 4 Ezra survives
   in Latin and Syriac, not Greek.
 
-One mapping worth your scepticism: the Synodal `1ES`/`2ES` assignment is
-inferred from canon position rather than from the labels, which read
-"1-я Ездры"/"2-я Ездры". If you know the Synodal numbering well, please check
-it.
+The Synodal Esdras books are the one place the source labels mislead, so to
+save you the trouble:
+
+| Synodal name | label in source | is | USFM |
+|---|---|---|---|
+| 1 Ездры | `Ездры` | Ezra | `EZR` |
+| — | `Неемии` | Nehemiah | `NEH` |
+| 2 Ездры | `1-я Ездры` | 1 Esdras (Greek) | `1ES` |
+| 3 Ездры | `2-я Ездры` | 2 Esdras (Latin / 4 Ezra) | `2ES` |
+
+The source drops the "1" from canonical Ezra and then numbers the two
+deuterocanonical books from 1, so its "N-я Ездры" is Synodal's "N+1 Ездры".
+Taking those labels at face value puts `1ES` and `2ES` one book too early.
 
 ## Licence
 
