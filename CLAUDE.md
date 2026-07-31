@@ -89,7 +89,9 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   from byztxt CSV files), `convert_delitzsch_nt.py` (Hebrew NT from
   HebrewNewTestament/HebDelitzsch OSIS).
 - **`scripts/export_dataset.py`** — builds a HuggingFace-ready dataset in
-  `out/dataset/` from `site/data/` (run `export_static.py` first): `books.csv`
+  `out/dataset/` from `site/data/` (run `export_static.py` first); uploading
+  needs `pip install '.[dataset]'` (the Hub CLI is an extra, not a core dep —
+  the Docker image serves the Dash app and has no use for it): `books.csv`
   (one row per USFM book code; curated `english`/`hebrew`/`greek` name columns
   plus one column per translation holding the book string as it literally
   appears in that text's refs, so those stay joinable against the Parquet
