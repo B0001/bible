@@ -22,6 +22,12 @@ dev = [
 lexical = ["wordfreq>=3"]
 semantic = ["spacy>=3"]
 e2e = ["playwright>=1.40"]
+# Publishing the graded corpus to the Hub (scripts/export_dataset.py). Kept out
+# of the core deps deliberately: the Dockerfile installs requirements.txt to
+# serve the Dash app, and the Hub CLI has no runtime role there.
+# No [cli] extra — huggingface-hub 1.x ships the `hf` console script in the
+# base package, and asking for [cli] is a silent no-op that uv warns about.
+dataset = ["huggingface-hub>=1.25.1"]
 
 # Anchor pytest's rootdir here so it does not climb into a parent directory and
 # load an unrelated conftest.py. importmode=importlib keeps test modules isolated.
