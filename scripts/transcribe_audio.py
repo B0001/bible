@@ -67,14 +67,14 @@ def multipart_body(fields, file_field, filename, file_bytes,
     for name, value in fields:
         parts.append(
             f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"'
-            f"\r\n\r\n{value}\r\n".encode("utf-8")
+            f"\r\n\r\n{value}\r\n".encode()
         )
     parts.append(
         f'--{boundary}\r\nContent-Disposition: form-data; name="{file_field}"; '
-        f'filename="{filename}"\r\nContent-Type: {file_content_type}\r\n\r\n'.encode("utf-8")
+        f'filename="{filename}"\r\nContent-Type: {file_content_type}\r\n\r\n'.encode()
         + file_bytes + b"\r\n"
     )
-    parts.append(f"--{boundary}--\r\n".encode("utf-8"))
+    parts.append(f"--{boundary}--\r\n".encode())
     return b"".join(parts), f"multipart/form-data; boundary={boundary}"
 
 

@@ -73,8 +73,7 @@ def main():
             print(f"  {book_id}...", end=" ", flush=True)
             xml_text = fetch_book(book_id)
             verses = parse_book(xml_text, book_label)
-            for ref, text in verses:
-                f.write(f"{text} -- {ref}\n")
+            f.writelines(f"{text} -- {ref}\n" for ref, text in verses)
             total += len(verses)
             print(f"{len(verses)} verses")
             time.sleep(0.05)  # polite crawl rate

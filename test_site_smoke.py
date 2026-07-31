@@ -65,7 +65,8 @@ def loaded_page(site_url):
     with playwright_sync.sync_playwright() as p:
         try:
             browser = p.chromium.launch()
-        except Exception:
+        # Broad on purpose: any launch failure should skip, never fail the suite.
+        except Exception:  # noqa: BLE001
             pytest.skip("chromium not installed — run: playwright install chromium")
         page = browser.new_page(viewport={"width": 360, "height": 800})
         errors = []

@@ -69,11 +69,12 @@ def main():
             try:
                 csv_text = fetch_book(file_id)
                 verses = parse_book(csv_text, book_label)
-                for ref, greek_text in verses:
-                    f.write(f"{greek_text} -- {ref}\n")
+                f.writelines(f"{greek_text} -- {ref}\n" for ref, greek_text in verses)
                 total += len(verses)
                 print(f"{len(verses)} verses")
-            except Exception as e:
+            # Deliberately broad: one malformed book upstream must not abort a
+            # 27-book download. Whatever went wrong, report it and carry on.
+            except Exception as e:  # noqa: BLE001
                 print(f"skipped ({e})")
             time.sleep(0.05)
 

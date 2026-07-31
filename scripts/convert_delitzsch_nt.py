@@ -93,8 +93,7 @@ def main():
         return
 
     with open(args.out, "w", encoding="utf-8") as f:
-        for ref, text in verses:
-            f.write(f"{text} -- {ref}\n")
+        f.writelines(f"{text} -- {ref}\n" for ref, text in verses)
 
     print(f"Wrote {len(verses)} verses -> {args.out}")
 

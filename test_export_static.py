@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts"))
 
-from export_static import export_audio  # noqa: E402
+from export_static import export_audio
 
 
 def _fixture(tmp_path):

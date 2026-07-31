@@ -1,7 +1,8 @@
 """Tests for the comprehension-scoring core."""
+import contextlib
 import importlib.util
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import polars as pl
 import pytest
@@ -305,7 +306,7 @@ def test_update_vocab_file_persists_for_load_vocab(tmp_path):
 # Phase 5: review history + half-life recall model
 # --------------------------------------------------------------------------- #
 
-NOW = datetime(2026, 6, 30, tzinfo=timezone.utc)
+NOW = datetime(2026, 6, 30, tzinfo=UTC)
 
 
 def test_record_review_creates_log_and_load_profile_replays(tmp_path):
@@ -594,6 +595,7 @@ def test_semantic_model_credit_for_similar_word(tmp_path):
 def test_semantic_model_credit_caps_at_sim_weight(tmp_path):
     """Semantic credit never exceeds SIM_WEIGHT."""
     import spacy
+
     from parser import _SIM_WEIGHT
     try:
         nlp = spacy.load("en_core_web_md")
@@ -815,8 +817,8 @@ def test_verse_difficulty_unseen_form_falls_back():
 
 def test_cli_writes_difficulty_rank(tmp_path, monkeypatch):
     """Integration test: main() writes a difficulty_rank column."""
-    import sys
     import csv
+    import sys
 
     # Use the sample data that's in the repo
     bible_path = "sample/nasb_sample.txt"
@@ -837,7 +839,7 @@ def test_cli_writes_difficulty_rank(tmp_path, monkeypatch):
     assert os.path.exists(out_path), f"Output file {out_path} was not created"
 
     # Read the CSV and check the header
-    with open(out_path, "r") as f:
+    with open(out_path) as f:
         reader = csv.DictReader(f)
         columns = reader.fieldnames
         assert columns is not None
@@ -848,9 +850,7 @@ def test_cli_writes_difficulty_rank(tmp_path, monkeypatch):
         for row in reader:
             rank_str = row.get("difficulty_rank", "")
             if rank_str and rank_str.strip():
-                try:
+                with contextlib.suppress(ValueError):
                     difficulty_ranks.append(int(rank_str))
-                except ValueError:
-                    pass
 
         assert len(difficulty_ranks) > 0, "No non-null difficulty_rank values found"

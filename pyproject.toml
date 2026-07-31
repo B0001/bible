@@ -46,9 +46,19 @@ py-modules = ["parser", "dash_app"]
 [tool.ruff]
 line-length = 100
 
-# Pin the rule set explicitly. `ruff>=0.5` floats, and 0.16 widened the implicit
-# default set (I, UP, SIM, BLE, RUF, ...), which turned `ruff check .` -- the
-# gate every phase is verified against -- into a moving target. These four are
-# ruff's historical defaults, the set this repo was written against.
+# Pin the rule set explicitly. `ruff>=0.5` floats and 0.16 widened the implicit
+# default set, which turned `ruff check .` -- the gate every phase is verified
+# against -- into a moving target: 51 findings on 0.16, zero on 0.15, same code.
+# Naming the rules means the gate says the same thing on every ruff version.
+#
+# This is the wider set, adopted once the whole repo was clean against it.
+# E4/E7/E9/F were the historical default; the rest are what 0.16 added and the
+# codebase now passes.
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F"]
+select = ["E4", "E7", "E9", "F", "YTT", "BLE", "EXE", "UP", "I", "SIM", "FURB", "RUF", "ISC"]
+
+# The ambiguous-unicode rules are noise in this repo, not signal: it is a
+# multilingual Bible corpus, so Hebrew, Greek, Cyrillic and Arabic characters
+# that these rules read as "confusable" with Latin are the actual subject
+# matter. Leaving them on would mean 81 permanent false positives.
+ignore = ["RUF001", "RUF002", "RUF003"]

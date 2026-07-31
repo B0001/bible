@@ -6,7 +6,7 @@ import wave
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts"))
 
-import transcribe_audio as T  # noqa: E402
+import transcribe_audio as T
 
 
 def test_multipart_body():

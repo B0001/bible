@@ -1,10 +1,11 @@
 """Tests for scripts/align_audio.py (Phase 10 audio-text alignment)."""
 import os
 import sys
+from itertools import pairwise
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts"))
 
-from align_audio import align_chapter, match_anchors, skeleton  # noqa: E402
+from align_audio import align_chapter, match_anchors, skeleton
 
 
 def words_for(text, start=0.0, step=1.0):
@@ -43,7 +44,7 @@ def test_perfect_reading_aligns_every_verse():
 
 def test_boundaries_are_monotonic_and_contiguous():
     rows = align_chapter(VERSES, PERFECT_ASR, duration=10.0)
-    for a, b in zip(rows, rows[1:]):
+    for a, b in pairwise(rows):
         assert a["end"] == b["start"]
         assert a["start"] <= a["end"]
 

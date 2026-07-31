@@ -31,7 +31,7 @@ import tomllib
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from parser import load_bible, tokenize_and_stem  # noqa: E402
+from parser import load_bible, tokenize_and_stem
 
 
 def export_bible(entry, site_data_dir):

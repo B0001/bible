@@ -10,9 +10,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts"))
 
-import pytest  # noqa: E402
-
-from export_dataset import (  # noqa: E402
+import pytest
+from export_dataset import (
     BOOK_ORDER,
     ENGLISH_NAMES,
     GREEK_NAMES,
