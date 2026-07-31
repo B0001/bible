@@ -155,7 +155,7 @@ def load_bibles():
                 "audio": None,
             }
             log.info("Loaded fallback NASB from %s (%d verses)", GRADED_CSV, df.height)
-        except Exception as e:
+        except (OSError, pl.exceptions.PolarsError) as e:
             log.warning("Could not load fallback CSV %s: %s", GRADED_CSV, e)
 
     return bibles
@@ -201,7 +201,7 @@ def get_read_refs(bible_id):
         ).fetchall()
         con.close()
         return {r[0] for r in rows}
-    except Exception as e:
+    except sqlite3.Error as e:
         log.warning("reads.db read error: %s", e)
         return set()
 
@@ -215,7 +215,7 @@ def _mark_read(bible_id, refs):
         )
         con.commit()
         con.close()
-    except Exception as e:
+    except sqlite3.Error as e:
         log.warning("mark_read error: %s", e)
 
 
@@ -228,7 +228,7 @@ def _mark_unread(bible_id, refs):
         )
         con.commit()
         con.close()
-    except Exception as e:
+    except sqlite3.Error as e:
         log.warning("mark_unread error: %s", e)
 
 
@@ -546,11 +546,9 @@ def find_passage(n_clicks, bible_id):
     df_ord = BIBLES[bible_id]["df_ord"]
 
     if not has_count_cols(df_ord):
-        return (
-            "Regrade with parser.py to enable this feature "
-            "(needs known_count and total_count columns).",
-            panel_style,
-        )
+        msg = ("Regrade with parser.py to enable this feature "
+               "(needs known_count and total_count columns).")
+        return msg, panel_style
 
     known = df_ord["known_count"].to_list()
     total = df_ord["total_count"].to_list()

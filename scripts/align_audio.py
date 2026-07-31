@@ -31,7 +31,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from parser import load_bible, tokenize  # noqa: E402
+from parser import load_bible, tokenize
 
 MATRES = re.compile(r"[יו]")
 
@@ -176,14 +176,14 @@ def align_chapter(verses, words, duration=None, word_level=False):
 
     # Time of every token's first read; each token ends where the next begins.
     tok_starts = _clamp_non_decreasing([interp(t, xs, ys) for t in range(len(verse_skels))])
-    tok_ends = tok_starts[1:] + [duration]
+    tok_ends = [*tok_starts[1:], duration]
     # Verse boundary = its first token's start (a verse ends where the next
     # begins), computed from the same token times so word/verse edges agree.
     first_tok = {}
     for tok_i, v in enumerate(verse_of):
         first_tok.setdefault(v, tok_i)
     starts = [tok_starts[first_tok[v]] for v in range(len(verses))]
-    ends = starts[1:] + [duration]
+    ends = [*starts[1:], duration]
 
     out = []
     asr_starts = [t for _, t, _ in asr]

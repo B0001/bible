@@ -45,7 +45,7 @@ import warnings
 from collections import Counter
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import polars as pl
 from nltk.stem.snowball import SnowballStemmer
@@ -88,7 +88,10 @@ def _stemmer_for(lang):
         else:
             try:
                 _STEMMERS[lang] = SnowballStemmer(name, ignore_stopwords=True)
-            except Exception:  # no NLTK stopword list for this language
+            # ValueError: Snowball covers the language but NLTK ships no
+            # stopword list for it. LookupError: the stopwords corpus was never
+            # downloaded. Either way, stem without them.
+            except (ValueError, LookupError):
                 _STEMMERS[lang] = SnowballStemmer(name)
     return _STEMMERS[lang]
 
@@ -218,7 +221,7 @@ def _reviews_path(vocab_path):
 
 def _aware(ts):
     """Coerce a datetime to UTC-aware (assume naive timestamps are UTC)."""
-    return ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts
+    return ts.replace(tzinfo=UTC) if ts.tzinfo is None else ts
 
 
 def record_review(vocab_path, word, correct, when=None, lang="en"):
@@ -233,7 +236,7 @@ def record_review(vocab_path, word, correct, when=None, lang="en"):
     if not stems:
         return None
     stem = stems[0]
-    when = _aware(when or datetime.now(timezone.utc))
+    when = _aware(when or datetime.now(UTC))
 
     path = _reviews_path(vocab_path)
     out_dir = os.path.dirname(path)
@@ -819,7 +822,7 @@ def main():
     now = None
     profile = None
     if args.decay or args.study > 0 or args.effort or args.semantic:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         profile = load_profile(args.vocab, args.lang)
 
     semantic_model = None

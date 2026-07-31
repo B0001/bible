@@ -30,7 +30,6 @@ from dash_app import (  # noqa: E402
     update_table,
 )
 
-
 # --------------------------------------------------------------------------- #
 # _strip_marks: nikudim-insensitive search
 # --------------------------------------------------------------------------- #
@@ -227,9 +226,11 @@ def test_load_audio_manifest_degrades_to_none(tmp_path):
 
 def test_load_audio_manifest_skips_broken_sidecar(tmp_path):
     manifest_path = _audio_fixture(tmp_path)
-    manifest = json.loads(open(manifest_path).read())
+    with open(manifest_path) as f:
+        manifest = json.load(f)
     manifest["chapters"].append({"book": "Gen", "chapter": 2, "sidecar": str(tmp_path / "nope.json")})
-    open(manifest_path, "w").write(json.dumps(manifest))
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f)
     audio = dash_app.load_audio_manifest(manifest_path)
     assert list(audio["chapters"]) == ["Gen_001.opus"]  # good chapter survives
 

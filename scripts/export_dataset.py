@@ -46,7 +46,7 @@ import polars as pl
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from parser import corpus_ranks, verse_difficulty  # noqa: E402
+from parser import corpus_ranks, verse_difficulty
 
 # ---------------------------------------------------------------- USFM canon
 
@@ -165,7 +165,7 @@ GREEK_NAMES = {
 }
 
 # Statenvertaling interleaves Baruch between Malachi and Matthew.
-STATEN67 = OT39 + ["BAR"] + NT27
+STATEN67 = [*OT39, "BAR", *NT27]
 
 # The Russian Synodal canon breaks positional mapping twice over: deuterocanon
 # is interleaved through the OT, and the NT runs in Orthodox order (Catholic
@@ -320,15 +320,15 @@ def write_books_csv(out_dir, bible_ids, names_by_bible):
     with open(path, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(
-            ["usfm", "canon_order", "testament", "english", "hebrew", "greek"] + bible_ids
+            ["usfm", "canon_order", "testament", "english", "hebrew", "greek", *bible_ids]
         )
         for i, code in enumerate(present, 1):
             testament = "OT" if code not in NT27 else "NT"
-            writer.writerow(
-                [code, i, testament, ENGLISH_NAMES.get(code, ""),
-                 HEBREW_NAMES.get(code, ""), GREEK_NAMES.get(code, "")]
-                + [names_by_bible[b].get(code, "") for b in bible_ids]
-            )
+            writer.writerow([
+                code, i, testament, ENGLISH_NAMES.get(code, ""),
+                HEBREW_NAMES.get(code, ""), GREEK_NAMES.get(code, ""),
+                *(names_by_bible[b].get(code, "") for b in bible_ids),
+            ])
     print(f"  books.csv        {len(present)} books x {len(bible_ids)} translations")
 
 

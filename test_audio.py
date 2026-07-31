@@ -7,9 +7,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts"))
 
-import align_audio  # noqa: E402
-import ingest_audio  # noqa: E402
-
+import align_audio
+import ingest_audio
 
 # --- ingest_audio -----------------------------------------------------------
 
@@ -67,7 +66,7 @@ def _words_at(pairs):
 # Three verses, two tokens each, all unique after skeletonization
 # (avoid י/ו so tokens survive matres stripping).
 VERSES = [("T 1:1", "אבג דגש"), ("T 1:2", "הקל מנס"), ("T 1:3", "פרק תלם")]
-ALL_TOKENS = "אבג דגש הקל מנס פרק תלם".split()
+ALL_TOKENS = ["אבג", "דגש", "הקל", "מנס", "פרק", "תלם"]
 
 
 def test_align_clean_chapter():
@@ -133,7 +132,7 @@ def test_align_flags_dropped_verse():
 
 def test_align_tolerates_preamble():
     # Chapter announcement ("ספר ... פרק א") precedes verse 1 in the narration.
-    preamble = _words("ספר קדמה".split())
+    preamble = _words(["ספר", "קדמה"])
     body = _words(ALL_TOKENS, start=2.0)
     aligned = align_audio.align_chapter(VERSES, preamble + body, duration=10.5)
     assert aligned[0]["start"] == 2.0  # verse 1 starts after the preamble
