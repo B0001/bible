@@ -111,14 +111,75 @@ require them.
 Genealogy-heavy chapters (like the sample, 1 Chr 1) are the worst case for ASR
 (proper names) but the best case for anchors (rare tokens) — good early test.
 
-### D3. Fallback: CPU forced alignment, fully local
+### D3. Fallback: CPU forced alignment, fully local — ❌ TESTED AND REJECTED
 
-If Whisper's Biblical-Hebrew quality makes anchor matching too sparse:
-**aeneas** (TTS + DTW, espeak-ng has Hebrew) computes verse-level boundaries
-directly from our verse list, CPU-only, faster than realtime, $0. Coarser but
-robust, and it needs exactly the granularity we product-require (verse level).
-A GPU forced aligner on rented compute (e.g. MMS/ctc-forced-aligner on Modal)
-is the word-level escape hatch; not planned unless D2 and aeneas both fail.
+The original plan: **aeneas** (TTS + DTW, espeak-ng has Hebrew) computes
+verse-level boundaries directly from our verse list, CPU-only, faster than
+realtime, $0.
+
+**This was tried on 2026-08-01 and does not work for this material.** Keeping
+the result here so nobody spends the day rediscovering it.
+
+Getting aeneas to run at all is already awkward: it is unmaintained (1.7.3,
+2017), imports `numpy.distutils`, so it needs numpy < 2 and Python ≤ 3.11
+(`distutils` left the stdlib in 3.12) plus `setuptools < 60`, and it links
+`-lespeak`. It then rejects Hebrew, because aeneas 1.7.3's **espeak-ng wrapper
+has no Hebrew mapping** — the design note above was wrong on that point.
+The only engine here that maps Hebrew is `tts=macos` (the Carmit `he_IL`
+voice), which also makes the fallback macOS-only.
+
+Once running, the output is unusable. Scored against the verses the existing
+aligner is *confident* about (confidence ≥ 0.8 — these are anchored to real
+matched ASR tokens, so they are effectively ground truth), across 14 chapters
+and 100 such verses:
+
+| metric | aeneas vs. existing |
+|---|---|
+| median abs. error in verse start | **51.2 s** |
+| p90 | 166.0 s |
+| verses off by > 2 s | 99 % |
+| verses off by > 5 s | 98 % |
+
+It also fails its own internal sanity checks: every chapter overran the audio
+duration (+0.4 to +1.9 s) and every chapter emitted degenerate < 0.5 s
+fragments (1–14 per chapter).
+
+The failure mode is DTW drift that saturates. In Gen 1 aeneas starts ~12 s
+early, crosses over around v15, drifts to +90 s by v22, then assigns **verses
+27–31 all to 364.00 s**, the end of the file — it runs out of audio and stacks
+the remaining verses on the last timestamp. Verse 27 has existing confidence
+1.00 and aeneas places it 73 s late. Error grows with chapter length (Gen 1
+12 s → Exod 20 37 s → 1 Sam 17 89 s), which is the signature of progressive
+slip rather than noise.
+
+Cause: Carmit reads **modern Israeli** Hebrew, while the audio is cantillated
+liturgical **Biblical** Hebrew, and the WLC text carries niqqud and
+cantillation marks. The synthesized reference is too far from the recording
+for DTW to track it.
+
+If verse-level timings ever do need improving, the remaining option is the
+GPU forced aligner (MMS / ctc-forced-aligner on rented compute) — the
+word-level escape hatch. Do not revisit aeneas.
+
+### D3a. What "low confidence" actually measures
+
+Related finding from the same session, and it reframes the problem: low
+confidence is mostly a **short-chapter artifact, not a poetry problem**.
+Across all 737 chapters, mean confidence correlates with chapter size —
+`corr(conf, verse_count) = +0.32`, `corr(conf, token_count) = +0.43`:
+
+| verses in chapter | chapters | mean confidence | below 0.5 |
+|---|---|---|---|
+| 0–8 | 25 | 0.488 | 15 |
+| 9–15 | 102 | 0.658 | 4 |
+| 16–25 | 263 | 0.706 | 4 |
+| 26–40 | 272 | 0.728 | 3 |
+| 41+ | 75 | 0.746 | 0 |
+
+The 26 sub-0.5 chapters have a median of 7.5 verses against 25 for the corpus,
+and no chapter with 41+ verses falls below 0.5. Short chapters simply offer
+fewer unique tokens to anchor on, so a smaller fraction matches. Confidence
+stays a useful review signal, but it measures anchor density, not error.
 
 ### D4. Serve compressed audio, keep WAV as archive
 
