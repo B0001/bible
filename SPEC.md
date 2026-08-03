@@ -272,8 +272,8 @@ request.
 
 ## Phase 9.5 — All languages
 
-`--lang` accepts any ISO 639-1 code: the 15 NLTK Snowball languages (ar, da,
-de, en, es, fi, fr, hu, it, nl, no, pt, ro, ru, sv) get stem-aware matching;
+`--lang` accepts any ISO 639-1 code: the nine languages mapped in
+`SNOWBALL_LANGS` (ar, de, en, es, fr, it, nl, pt, ru) get stem-aware matching;
 he/el keep their mark-stripping paths; Arabic additionally strips harakat and
 renders RTL; anything else falls back to exact lowercased word forms (zh/ja/th
 word segmentation is out of scope). `scripts/convert_getbible.py` fetches any
