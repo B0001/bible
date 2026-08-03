@@ -10,6 +10,28 @@ English matching is **stem-aware** (knowing `run` also credits `running` and
 `ran`); Hebrew strips nikudim/cantillation so vocab matches any pointed text;
 Greek strips diacritics.
 
+## This repo is also a Claude Code skills marketplace
+
+The techniques here are reusable well beyond scripture. `skills/` packages them
+as four installable [Agent Skills](https://code.claude.com/docs/en/skills), with
+this codebase as the reference implementation behind them:
+
+| Skill | What it teaches |
+|---|---|
+| [`vocabulary-grading`](skills/vocabulary-grading/SKILL.md) | Comprehension scoring, corpus-internal difficulty ranks, learning order, O(n) longest-readable-span, unlock ranking, half-life recall |
+| [`multilingual-text-tokenization`](skills/multilingual-text-tokenization/SKILL.md) | Normalizing Hebrew/Greek/Arabic/Cyrillic for word matching, stemmer selection, Python↔JS parity, RTL |
+| [`asr-forced-alignment`](skills/asr-forced-alignment/SKILL.md) | Aligning a known text to long-form audio via cloud ASR + anchor matching — no GPU, ~$0.11/audio-hour |
+| [`derived-dataset-publishing`](skills/derived-dataset-publishing/SKILL.md) | Publishing derived metrics from a corpus you don't own, with join keys that survive canon variation |
+
+```bash
+/plugin marketplace add B0001/bible
+/plugin install graded-reader@graded-reader-skills
+```
+
+Skills then invoke as `/graded-reader:vocabulary-grading`, and Claude loads them
+automatically when a task matches. No version is pinned in the manifests, so
+installs track the repo's latest commit.
+
 ## How it works
 
 ```
@@ -85,9 +107,9 @@ to bare consonants. In the UI, search is nikudim-insensitive (type `שלום`, m
 
 `scripts/convert_getbible.py` fetches any of ~117 translations in 63 languages
 from getbible.net, and `--lang` accepts any ISO 639-1 code. Stem-aware matching
-covers the 15 Snowball languages (ar, da, de, en, es, fi, fr, hu, it, nl, no,
-pt, ro, ru, sv); Hebrew/Greek strip marks; anything else matches on exact
-lowercased word forms:
+covers the nine languages in `SNOWBALL_LANGS` (ar, de, en, es, fr, it, nl, pt,
+ru); Hebrew/Greek strip marks; anything else matches on exact lowercased word
+forms:
 
 ```bash
 python scripts/convert_getbible.py --list                  # browse translations

@@ -1,0 +1,29 @@
+{
+  "name": "graded-reader-skills",
+  "owner": {
+    "name": "B0001",
+    "email": "hess.bn@gmail.com"
+  },
+  "description": "Skills for building vocabulary-graded readers: scoring a corpus by a reader's comprehension, tokenizing across scripts, aligning audio to a known text, and publishing derived metrics from a corpus you don't own.",
+  "plugins": [
+    {
+      "name": "graded-reader",
+      "source": "./",
+      "description": "Four skills extracted from a working vocabulary-graded Bible reader (English, Biblical Hebrew, Koine Greek + 9 more languages): comprehension scoring and learning order, multilingual tokenization, cloud-ASR forced alignment, and derived-dataset publishing.",
+      "keywords": [
+        "language-learning",
+        "readability",
+        "tokenization",
+        "forced-alignment",
+        "dataset",
+        "corpus"
+      ],
+      "skills": [
+        "./skills/vocabulary-grading",
+        "./skills/multilingual-text-tokenization",
+        "./skills/asr-forced-alignment",
+        "./skills/derived-dataset-publishing"
+      ]
+    }
+  ]
+}
