@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bible-reader
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          # Dev rebuilds reuse the `dev` tag, so the tag alone never tells the
+          # kubelet the image changed. Always is what makes a redeploy pull.
+          imagePullPolicy: Always
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bible-reader
+spec:
+  rules:
+    - host: bible-dev.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                # Base name on purpose: kustomize's name-reference transformer
+                # appends nameSuffix here, so this stays correct if the suffix
+                # changes. Writing the suffixed name would hard-code it.
+                name: bible-reader
+                port:
+                  name: http

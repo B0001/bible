@@ -1,0 +1,40 @@
+# Keep the build context small: without this, `docker build` ships .git, the
+# host .venv (wrong platform), the corpora in data/, and the exported site into
+# the daemon on every build.
+
+.git
+.gitignore
+.github
+.venv
+__pycache__
+**/__pycache__
+*.pyc
+*.egg-info
+**/*.egg-info
+
+# Test/lint caches
+.pytest_cache
+.ruff_cache
+
+# Downloaded corpora and generated output -- the image pre-grades the bundled
+# sample instead, and real texts are mounted or regenerated in-container.
+data
+out
+site
+reads.db
+
+# Local secrets/config -- never bake into an image.
+.env
+
+# Docs, design notes, and the skills marketplace: not runtime inputs.
+*.md
+!README.md
+skills
+.claude
+.claude-plugin
+.aider*
+
+# Editor/OS noise
+.DS_Store
+.idea
+.vscode

@@ -22,6 +22,12 @@ dev = [
 lexical = ["wordfreq>=3"]
 semantic = ["spacy>=3"]
 e2e = ["playwright>=1.40"]
+# Postgres-backed read tracking (DATABASE_URL). An extra, not a core dep:
+# dash_app imports psycopg_pool lazily inside _pool(), so a SQLite-only install
+# never touches it. The Docker image DOES install these — see requirements.txt —
+# because the Kubernetes deployment runs multiple replicas and SQLite on a
+# shared volume cannot support more than one writer.
+postgres = ["psycopg[binary]>=3.1", "psycopg-pool>=3.2"]
 # Publishing the graded corpus to the Hub (scripts/export_dataset.py). Kept out
 # of the core deps deliberately: the Dockerfile installs requirements.txt to
 # serve the Dash app, and the Hub CLI has no runtime role there.
@@ -38,6 +44,7 @@ markers = [
     "lexical: tests requiring the [lexical] extra (wordfreq)",
     "semantic: tests requiring the [semantic] extra (spacy + en_core_web_md)",
     "e2e: browser smoke tests requiring the [e2e] extra (playwright + chromium) and exported site data",
+    "postgres: read-tracking tests requiring the [postgres] extra and a reachable $TEST_DATABASE_URL",
 ]
 
 [tool.setuptools]

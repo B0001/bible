@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: bible-reader
+spec:
+  # Keeps node drains from taking the service to zero. In base now rather than
+  # prod-only: the Deployment runs 2 replicas by default since read tracking
+  # moved to Postgres, so there is something to protect in every environment.
+  # Must stay below the HPA's minReplicas or voluntary evictions block forever.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bible-reader
