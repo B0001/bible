@@ -1,0 +1,16 @@
+{
+  "name": "graded-reader",
+  "description": "Four skills extracted from a working vocabulary-graded Bible reader: comprehension scoring and learning order, multilingual tokenization, cloud-ASR forced alignment, and derived-dataset publishing.",
+  "author": {
+    "name": "B0001",
+    "email": "hess.bn@gmail.com"
+  },
+  "keywords": [
+    "language-learning",
+    "readability",
+    "tokenization",
+    "forced-alignment",
+    "dataset",
+    "corpus"
+  ]
+}

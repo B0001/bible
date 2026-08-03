@@ -129,6 +129,23 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   `my_vocab.txt` (EF top-100 English words), `hebrew_vocab.txt`,
   `greek_vocab.txt` (starter vocabularies for the original languages).
 
+- **`skills/` + `.claude-plugin/`** — the repo doubles as a Claude Code plugin
+  marketplace shipping four Agent Skills: `vocabulary-grading`,
+  `multilingual-text-tokenization`, `asr-forced-alignment`, and
+  `derived-dataset-publishing`. They are the *portable* statement of this
+  project's domain knowledge — formulas, algorithms, traps, and measured
+  negative results — with this codebase as the reference implementation, so a
+  skill must never assume the reader has these files. `.claude-plugin/
+  marketplace.json` lists the single `graded-reader` plugin with
+  `"source": "./"` and an explicit `skills` array (root-level `skills/`, per the
+  marketplace-root pattern); `.claude-plugin/plugin.json` is the plugin
+  manifest. Neither pins a `version`, so installs track the latest commit —
+  adding one means bumping it on every release. Validate with `claude plugin
+  validate .` after editing either manifest. When you change an algorithm in
+  `parser.py` or `scripts/`, check whether the corresponding SKILL.md still
+  tells the truth; the numbers in them (cost, corpus size, error rates) are
+  measured, not illustrative.
+
 **Data flow:** `scripts/convert_*.py` → `data/*.txt` → `parser.py --lang X` →
 `out/<bible>_graded.csv` (listed in `bibles.toml`) → `dash_app.py`.
 A second branch feeds the static site and the published dataset:
