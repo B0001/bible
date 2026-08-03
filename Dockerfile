@@ -21,6 +21,39 @@ COPY scripts ./scripts
 RUN python parser.py --bible sample/nasb_sample.txt \
         --vocab sample/my_vocab.txt --out out/nasb_graded.csv
 
+# Non-root runtime. Kubernetes pins runAsUser/runAsGroup to this same 10001 so
+# the PVC holding reads.db is writable; keep the two in sync if either changes.
+# /app itself stays root-owned and read-only at runtime -- everything the app
+# writes lives on the mounted volume (READS_DB) or in the /tmp emptyDir.
+RUN groupadd --gid 10001 app \
+    && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin app
+
+# Bytecode is baked at build time; writing it at runtime would need a writable
+# /app, which readOnlyRootFilesystem forbids.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# The account's home is /home/app, which does not exist and sits on the
+# read-only root filesystem anyway. gunicorn's control server tries to open a
+# socket under $HOME at startup and logs "Read-only file system: '/home/app'"
+# without it. /tmp is the emptyDir the Deployment mounts.
+ENV HOME=/tmp
+
+# Read tracking uses Postgres when DATABASE_URL is set and SQLite otherwise.
+# Deliberately neither is set here: Kubernetes injects DATABASE_URL from a
+# Secret, and baking a READS_DB default would mean a missing Secret silently
+# falls back to per-pod SQLite -- every replica showing a different set of read
+# verses -- instead of failing where someone will notice. For a standalone
+# `docker run`, pass one explicitly:
+#   -e DATABASE_URL=postgresql://...        (shared, multi-container)
+#   -e READS_DB=/data/reads.db -v ...:/data (single container, file-backed)
+
+USER 10001:10001
+
 ENV DASH_HOST=0.0.0.0 DASH_PORT=8050
 EXPOSE 8050
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${DASH_PORT:-8050} --workers 2 dash_app:server"]
+
+# `exec` matters: without it the shell stays PID 1 and swallows SIGTERM, so
+# Kubernetes pod deletion would hang until terminationGracePeriodSeconds runs
+# out instead of shutting gunicorn down gracefully.
+CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:${DASH_PORT:-8050} --workers ${GUNICORN_WORKERS:-2} --timeout ${GUNICORN_TIMEOUT:-60} --graceful-timeout 30 --access-logfile - --error-logfile - dash_app:server"]

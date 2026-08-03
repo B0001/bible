@@ -77,12 +77,24 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   warning; falls back to `BIBLE_GRADED_CSV`, default `out/graded.csv`). UI: a
   Bible dropdown, comprehension-rate RangeSlider, **nikudim-insensitive search**
   (a `verse_plain` column is built at load via `_strip_marks`; the needle is
-  stripped too), per-verse **read tracking** in SQLite (`READS_DB`, default
-  `reads.db` — gitignored; mark read/unread buttons, unread-only filter,
-  progress line), a "Find longest passage" button (imports `longest_span` from
-  parser), and **RTL rendering** for Hebrew (`_cell_styles(lang)` sets
-  `direction: rtl` on the verse column when the Bible's `lang == "he"`).
+  stripped too), per-verse **read tracking** (mark read/unread buttons,
+  unread-only filter, progress line), a "Find longest passage" button (imports
+  `longest_span` from parser), and **RTL rendering** for Hebrew
+  (`_cell_styles(lang)` sets `direction: rtl` on the verse column when the
+  Bible's `lang == "he"`).
   Host/port/debug come from env vars (`DASH_HOST`, `DASH_PORT`, `DASH_DEBUG`).
+
+  **Read-tracking backend is dual.** `DATABASE_URL` (a `postgres://` DSN)
+  selects Postgres; unset, it falls back to SQLite at `READS_DB` (default
+  `reads.db`, gitignored). Both run the same SQL — only the parameter
+  placeholder (`?` vs `%s`) and the timestamp column type differ, which is why
+  the shared statements use standard `ON CONFLICT DO NOTHING` and
+  `CURRENT_TIMESTAMP` rather than the SQLite-only `INSERT OR IGNORE` /
+  `datetime('now')`. `psycopg_pool` is imported lazily inside `_pool()`, so a
+  SQLite-only install never needs it. Postgres exists because Kubernetes runs
+  multiple replicas and SQLite on a shared volume permits only one writer; see
+  `k8s/README.md`. Every backend fault is caught and logged, degrading to
+  "nothing marked read" rather than taking the reader down.
 - **`scripts/`** — standalone converters that download source texts into
   `data/` (gitignored): `convert_wlc.py` (Hebrew OT from openscriptures/morphhb
   OSIS XML; strips morphhb's `/` morpheme markers), `convert_gnt.py` (Greek NT
@@ -180,9 +192,31 @@ block in `pyproject.toml`.
 
 ## Deployment / infra
 
-One `Dockerfile` on `python:3.12-slim`: installs from `requirements.txt` (core
-deps only — optional extras are not in the image), downloads NLTK stopwords,
-copies `bibles.toml` + `scripts/`, pre-grades the sample data to
-`out/nasb_graded.csv`, and serves via gunicorn (`dash_app:server`) on
-`0.0.0.0:8050` with a `/health` endpoint. `requirements.txt` mirrors the core
-pyproject deps; `pyproject.toml` is canonical.
+One `Dockerfile` on `python:3.12-slim`: installs from `requirements.txt`,
+downloads NLTK stopwords, copies `bibles.toml` + `scripts/`, pre-grades the
+sample data to `out/nasb_graded.csv`, and serves via gunicorn
+(`dash_app:server`) on `0.0.0.0:8050` with a `/health` endpoint.
+`requirements.txt` mirrors the core pyproject deps plus `psycopg`;
+`pyproject.toml` is canonical.
+
+The image runs **non-root (uid 10001) with a read-only root filesystem**, which
+constrains what it may assume:
+- `HOME=/tmp`. The account's home is `/home/app`, which does not exist and is
+  read-only regardless; gunicorn's control server opens a socket under `$HOME`
+  at startup and logs an error without this.
+- Nothing may write to `/app`. The only writable path is the `/tmp` emptyDir.
+- Neither `DATABASE_URL` nor `READS_DB` is baked in, deliberately — see below.
+
+`k8s/` holds Kustomize manifests (`base` + `dev`/`prod` overlays):
+Deployment/Service/Ingress/ConfigMap/PDB, plus an HPA in prod. **There is no
+PVC.** Read tracking moved to Postgres precisely so the pods hold no local
+state; `DATABASE_URL` is injected from a Secret named `bible-reader-db`. The dev
+overlay ships a dev-only in-cluster Postgres StatefulSet; prod expects a managed
+instance with the Secret created out of band. `k8s/README.md` covers the
+connection-budget ceiling (`replicas × workers × READS_POOL_MAX`), which is what
+now bounds `maxReplicas`.
+
+Postgres tests live in `test_reads_postgres.py` (marker `postgres`), skipped
+unless `TEST_DATABASE_URL` is set. They run dash_app in a **subprocess** on
+purpose: the backend is resolved at import time, so an in-process reload would
+swap it out from under `test_dash_app.py` in the same session.

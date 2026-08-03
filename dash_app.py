@@ -4,16 +4,20 @@
 Loads graded CSVs produced by ``parser.py`` (columns ``ref, verse,
 comprehension_rate`` plus optional ``known_count, total_count``) and provides:
   - Multi-Bible selection via bibles.toml  (P7.2)
-  - Read tracking via SQLite reads.db     (P7.3)
+  - Read tracking, SQLite or Postgres     (P7.3)
   - Longest readable passage finder       (P7.4)
 
 Configuration (env vars):
     BIBLE_GRADED_CSV   fallback graded CSV if bibles.toml absent (default: out/graded.csv)
+    DATABASE_URL       Postgres DSN for read tracking; when set it takes
+                       precedence over READS_DB (default: unset -> SQLite)
     READS_DB           path to SQLite reads database (default: reads.db)
+    READS_POOL_MAX     max Postgres connections per process (default: 4)
     DASH_HOST          bind host (default: 127.0.0.1)
     DASH_PORT          bind port (default: 8050)
     DASH_DEBUG         "1"/"true" to enable debug mode (default: off)
 """
+import contextlib
 import json
 import logging
 import os
@@ -35,6 +39,11 @@ log = logging.getLogger(__name__)
 _HERE = os.path.dirname(os.path.abspath(__file__))
 GRADED_CSV = os.environ.get("BIBLE_GRADED_CSV", "out/graded.csv")
 READS_DB = os.environ.get("READS_DB", "reads.db")
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+# Postgres wins when configured. SQLite stays the default so `python dash_app.py`
+# and the test suite need no server; Kubernetes sets DATABASE_URL because SQLite
+# on a shared volume cannot support more than one writer (see k8s/README.md).
+USE_POSTGRES = DATABASE_URL.startswith(("postgres://", "postgresql://"))
 KNOWN_RATE = 0.95
 # Cap rows sent per callback: page_size only paginates client-side, so without
 # this a wide filter ships the entire corpus (~6 MB JSON for NASB) per request.
@@ -175,60 +184,117 @@ HAS_AUDIO = any(b["audio"] for b in BIBLES.values())
 
 
 # ---------------------------------------------------------------------------
-# SQLite reads tracking (P7.3)
+# Reads tracking (P7.3) -- SQLite locally, Postgres when DATABASE_URL is set
 # ---------------------------------------------------------------------------
+#
+# Both backends run the same SQL. Only two things actually differ, and they are
+# isolated in the two constants below:
+#
+#   - the parameter placeholder: ? for sqlite3, %s for psycopg
+#   - the timestamp column type
+#
+# ON CONFLICT DO NOTHING and CURRENT_TIMESTAMP are deliberately chosen over the
+# SQLite-only "INSERT OR IGNORE" and "datetime('now')" because both are standard
+# and both backends accept them verbatim (SQLite has supported upsert since
+# 3.24, far below anything Python 3.11+ ships).
 
-def _db():
-    con = sqlite3.connect(READS_DB)
-    con.execute("""
-        CREATE TABLE IF NOT EXISTS reads (
-            bible_id TEXT NOT NULL,
-            ref      TEXT NOT NULL,
-            read_at  TEXT NOT NULL DEFAULT (datetime('now')),
-            PRIMARY KEY (bible_id, ref)
+_PH = "%s" if USE_POSTGRES else "?"
+_TS = "TIMESTAMPTZ" if USE_POSTGRES else "TEXT"
+
+_SCHEMA = f"""
+    CREATE TABLE IF NOT EXISTS reads (
+        bible_id TEXT NOT NULL,
+        ref      TEXT NOT NULL,
+        read_at  {_TS} NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (bible_id, ref)
+    )
+"""
+
+_POOL = None
+
+
+def _pool():
+    """Lazily build the Postgres connection pool and ensure the schema.
+
+    Lazy on purpose: building it at import time would make the module fail to
+    import whenever Postgres is briefly unavailable, which during a rollout is
+    normal rather than exceptional. Deferring it means the app still starts,
+    serves verses, and merely degrades read-tracking until the database returns.
+    """
+    global _POOL
+    if _POOL is None:
+        from psycopg_pool import ConnectionPool
+
+        # One pool per gunicorn worker process, so the cluster-wide ceiling is
+        # (pods x workers x max_size). Keep that under Postgres' max_connections.
+        _POOL = ConnectionPool(
+            DATABASE_URL,
+            min_size=1,
+            max_size=int(os.environ.get("READS_POOL_MAX", "4")),
+            timeout=10,
+            open=True,
         )
-    """)
-    con.commit()
-    return con
+        with _POOL.connection() as con:
+            con.execute(_SCHEMA)
+    return _POOL
+
+
+@contextlib.contextmanager
+def _conn():
+    """Yield a connection to whichever backend is configured, committed on exit."""
+    if USE_POSTGRES:
+        # psycopg's pool context manager commits on clean exit and rolls back on
+        # exception, then returns the connection to the pool.
+        with _pool().connection() as con:
+            yield con
+    else:
+        con = sqlite3.connect(READS_DB)
+        try:
+            con.execute(_SCHEMA)
+            yield con
+            con.commit()
+        finally:
+            con.close()
 
 
 def get_read_refs(bible_id):
     """Return set of refs marked read for the given bible_id."""
     try:
-        con = _db()
-        rows = con.execute(
-            "SELECT ref FROM reads WHERE bible_id = ?", (bible_id,)
-        ).fetchall()
-        con.close()
-        return {r[0] for r in rows}
-    except sqlite3.Error as e:
-        log.warning("reads.db read error: %s", e)
+        with _conn() as con:
+            cur = con.cursor()
+            cur.execute(f"SELECT ref FROM reads WHERE bible_id = {_PH}", (bible_id,))
+            return {r[0] for r in cur.fetchall()}
+    # Broad except, not sqlite3.Error: the failure modes now include psycopg
+    # errors and pool timeouts. Read tracking is a convenience -- losing it must
+    # never take the reader down, so every backend fault degrades to "nothing
+    # marked read" and is logged.
+    except Exception as e:
+        log.warning("reads read error: %s", e)
         return set()
 
 
 def _mark_read(bible_id, refs):
     try:
-        con = _db()
-        con.executemany(
-            "INSERT OR IGNORE INTO reads (bible_id, ref) VALUES (?, ?)",
-            [(bible_id, r) for r in refs],
-        )
-        con.commit()
-        con.close()
-    except sqlite3.Error as e:
+        with _conn() as con:
+            cur = con.cursor()
+            cur.executemany(
+                f"INSERT INTO reads (bible_id, ref) VALUES ({_PH}, {_PH}) "
+                "ON CONFLICT DO NOTHING",
+                [(bible_id, r) for r in refs],
+            )
+    except Exception as e:
         log.warning("mark_read error: %s", e)
 
 
 def _mark_unread(bible_id, refs):
     try:
-        con = _db()
-        con.executemany(
-            "DELETE FROM reads WHERE bible_id = ? AND ref = ?",
-            [(bible_id, r) for r in refs],
-        )
-        con.commit()
-        con.close()
-    except sqlite3.Error as e:
+        with _conn() as con:
+            cur = con.cursor()
+            cur.executemany(
+                f"DELETE FROM reads WHERE bible_id = {_PH} AND ref = {_PH}",
+                [(bible_id, r) for r in refs],
+            )
+    except Exception as e:
         log.warning("mark_unread error: %s", e)
 
 

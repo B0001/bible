@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bible-reader
+spec:
+  replicas: 2
+  # Read tracking lives in Postgres, so pods hold no local state and any number
+  # can run at once. This was Recreate with replicas: 1 while reads.db was
+  # SQLite on a ReadWriteOnce volume -- that volume could not attach to two pods,
+  # so a rolling update deadlocked and scaling out was impossible.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        # No fsGroup: there is no longer a volume to chown. The only writable
+        # path is the /tmp emptyDir, which the kubelet creates writable already.
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: app
+          image: bible-reader:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8050
+          envFrom:
+            - configMapRef:
+                name: bible-reader-env
+          env:
+            # The DSN is a credential, so it comes from a Secret rather than the
+            # ConfigMap. dash_app switches to Postgres purely on this being set
+            # and starting with postgres:// -- unset it and the app silently
+            # falls back to per-pod SQLite, which is exactly the split-brain
+            # this migration removed. The dev overlay creates this Secret; prod
+            # expects an externally managed one (see k8s/README.md).
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: bible-reader-db
+                  key: url
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          # /health is a plain 200 from the Flask server underneath Dash. It does
+          # not touch the CSVs or Postgres, so it stays honest as a liveness
+          # signal: it reports "process is serving", not "data loaded".
+          #
+          # Deliberately NOT a database check. Read tracking degrades to "nothing
+          # marked read" when Postgres is unavailable (dash_app catches and logs),
+          # so the reader still works -- failing readiness on a database blip
+          # would take down a service that is still perfectly able to serve.
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+            # 24 * 5s = 2min budget for import-time corpus loading before the
+            # kubelet gives up. Large mounted corpora may need more.
+            failureThreshold: 24
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              # polars holds the graded corpus in memory; this is sized for the
+              # bundled sample. Mounting the full WLC/GNT corpora needs more --
+              # raise it in the overlay rather than here.
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # The only volume left. readOnlyRootFilesystem still needs a writable
+        # /tmp: gunicorn puts its worker heartbeat files there.
+        - name: tmp
+          emptyDir: {}
+      # Spread replicas across nodes so one node loss cannot take the service
+      # down. ScheduleAnyway, not DoNotSchedule: on a small or single-node
+      # cluster a hard constraint would leave pods unschedulable.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: bible-reader
+      terminationGracePeriodSeconds: 30
