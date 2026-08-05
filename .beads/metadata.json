@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "bible",
+  "project_id": "2e8bec92-9094-4df7-8d83-082441ba423c"
+}

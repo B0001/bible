@@ -116,3 +116,9 @@ reads.db
 # generated static-site data (built by scripts/export_static.py)
 site/data/
 .aider*
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
