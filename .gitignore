@@ -115,3 +115,7 @@ reads.db
 
 # generated static-site data (built by scripts/export_static.py)
 site/data/
+
+.aider.chat.history.md
+.aider.input.history
+.aider.tags.cache.v4/
