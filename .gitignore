@@ -115,7 +115,13 @@ reads.db
 
 # generated static-site data (built by scripts/export_static.py)
 site/data/
+.aider*
 
-.aider.chat.history.md
-.aider.input.history
-.aider.tags.cache.v4/
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+
+.beads/interactions.jsonl
+.claude/settings.json

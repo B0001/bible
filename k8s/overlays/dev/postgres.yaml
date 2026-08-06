@@ -1,0 +1,105 @@
+# A single-replica Postgres so `kubectl apply -k k8s/overlays/dev` works end to
+# end with nothing external.
+#
+# DEV ONLY. This is not a production database: one replica, no backups, no
+# failover, no connection pooler, and the password is in git. The prod overlay
+# deliberately ships none of this and expects an externally managed instance
+# (RDS/Cloud SQL/an operator) with its Secret created out of band.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: bible-reader-db
+type: Opaque
+stringData:
+  # Hostname is the Service below. Kustomize's nameSuffix rewrites both this
+  # Secret's name and the Service's, and the Deployment's secretKeyRef follows
+  # automatically -- but the host inside this string is opaque to kustomize, so
+  # it must spell out the suffixed Service name explicitly.
+  url: postgresql://bible:devpassword@bible-postgres-dev:5432/reads
+  POSTGRES_PASSWORD: devpassword
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bible-postgres
+spec:
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+  selector:
+    app.kubernetes.io/name: bible-postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: bible-postgres
+spec:
+  serviceName: bible-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bible-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: bible-postgres
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        # The postgres image's own uid. fsGroup lets it own the data volume.
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: bible
+            - name: POSTGRES_DB
+              value: reads
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: bible-reader-db
+                  key: POSTGRES_PASSWORD
+            # Postgres refuses to initialise into a non-empty directory, and
+            # many volumes arrive with a lost+found. A subdirectory avoids it.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          # Not readOnlyRootFilesystem: Postgres writes its socket and config
+          # into the image's own filesystem at startup.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "bible", "-d", "reads"]
+            periodSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "bible", "-d", "reads"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 1Gi }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi

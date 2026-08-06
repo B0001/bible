@@ -1,0 +1,32 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: bible-dev
+nameSuffix: -dev
+
+resources:
+  - namespace.yaml
+  - ../../base
+  # Dev-only in-cluster Postgres + its Secret. Prod ships neither and expects a
+  # managed instance with an externally created Secret.
+  - postgres.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/instance: dev
+    includeSelectors: true
+
+patches:
+  - path: dev-patch.yaml
+
+configMapGenerator:
+  - name: bible-reader-env
+    behavior: merge
+    literals:
+      - GUNICORN_WORKERS=1
+
+# Dev builds are rebuilt under the same tag, so the digest changes without the
+# tag changing; Always is what makes a redeploy actually pick the new image up.
+images:
+  - name: bible-reader
+    newTag: dev

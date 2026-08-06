@@ -1,0 +1,35 @@
+# Read tracking is in Postgres, so pods are stateless and this can scale freely.
+#
+# It could not, before. While reads.db was SQLite on a shared volume, the cap
+# was a correctness limit, not a capacity one: SQLite allows a single writer,
+# ReadWriteOnce volumes cannot attach across nodes, and SQLite's POSIX advisory
+# locking is unreliable over NFS. The ceiling here is now just the database's
+# connection budget -- see the note below.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: bible-reader
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: bible-reader
+  minReplicas: 2
+  # Connection math, which is the real constraint now:
+  #   replicas x GUNICORN_WORKERS x READS_POOL_MAX = 12 x 4 x 4 = 192 peak.
+  # That exceeds a stock Postgres max_connections of 100. Before raising this,
+  # either put PgBouncer in front, raise max_connections, or lower
+  # READS_POOL_MAX -- pods will otherwise start failing to acquire connections
+  # and read tracking will degrade to empty under load.
+  maxReplicas: 12
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleDown:
+      # Dash callbacks are bursty; a short window would thrash replicas.
+      stabilizationWindowSeconds: 300

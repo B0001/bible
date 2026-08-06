@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bible-reader
+  annotations:
+    # Chapter audio is served through /audio/<bible>/<file> with Range support
+    # (dash_app.py:249). The default proxy buffering would defeat seeking, and
+    # the default body/read timeouts are tuned for APIs, not media.
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+spec:
+  # Override per-cluster in the overlay; there is no portable default.
+  ingressClassName: nginx
+  rules:
+    - host: bible.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: bible-reader
+                port:
+                  name: http
