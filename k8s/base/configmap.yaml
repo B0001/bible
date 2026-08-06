@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bible-reader-env
+data:
+  DASH_HOST: "0.0.0.0"
+  DASH_PORT: "8050"
+  # Never "1" in a cluster: Dash debug mode exposes the interactive traceback
+  # console, which is remote code execution against anyone who can reach the pod.
+  DASH_DEBUG: "0"
+  # No READS_DB here on purpose. It is the SQLite fallback, and dash_app only
+  # consults it when DATABASE_URL is unset -- leaving it set would mean a
+  # missing Secret degrades silently to per-pod SQLite (each replica showing a
+  # different set of read verses) instead of failing visibly.
+  #
+  # Postgres connections per pod = GUNICORN_WORKERS x READS_POOL_MAX. Across the
+  # cluster multiply by replica count, and keep the total under the server's
+  # max_connections (default 100).
+  READS_POOL_MAX: "4"
+  # Baked into the image by the Dockerfile's pre-grade step. Only consulted if
+  # bibles.toml yields no usable entries.
+  BIBLE_GRADED_CSV: "out/nasb_graded.csv"
+  GUNICORN_WORKERS: "2"
+  GUNICORN_TIMEOUT: "60"

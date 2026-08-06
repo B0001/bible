@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: bible-prod
+nameSuffix: -prod
+
+resources:
+  - namespace.yaml
+  - ../../base
+  - hpa.yaml
+  # No Postgres here, and no Secret. Prod expects an externally managed database
+  # with a Secret named `bible-reader-db` (key `url`) created out of band -- see
+  # k8s/README.md. The PDB now lives in the base.
+
+labels:
+  - pairs:
+      app.kubernetes.io/instance: prod
+    # Must reach the pod labels, not just the Deployment's -- the PDB and the
+    # topology spread constraint both select on these.
+    includeSelectors: true
+
+patches:
+  - path: prod-patch.yaml
+
+configMapGenerator:
+  - name: bible-reader-env
+    behavior: merge
+    literals:
+      - GUNICORN_WORKERS=4
+
+# Pin by digest in a real pipeline (`newName@sha256:...`); a moving tag makes
+# the running revision unidentifiable after the fact.
+images:
+  - name: bible-reader
+    newTag: 0.1.0
