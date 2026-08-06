@@ -125,3 +125,5 @@ site/data/
 
 .beads/interactions.jsonl
 .claude/settings.json
+
+sandbox.sh
