@@ -127,3 +127,4 @@ site/data/
 .claude/settings.json
 
 sandbox.sh
+*~
