@@ -48,7 +48,21 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   writes a "what to learn next" ranking: `next_words_to_learn()` tallies, for
   every under-threshold verse, which single unknown stem would push it to or
   above `--known-rate` if learned, and ranks stems by how many verses they'd
-  unlock. `--vocab PATH` doubles as a vocab *profile* — different files are
+  unlock.
+  `--word-freq-out PATH` writes the Bible's own frequency table via
+  `word_frequencies()` (`form, rank, count, verse_count, cum_coverage`) — one
+  per language/translation, since the point is what *this* corpus needs, not
+  general word frequency. `--passage-leverage N --passage-leverage-out PATH`
+  ranks unknown stems by `passage_leverage()`: the increase, over the reader's
+  current vocab, in how many verses sit inside a run of `--min-span` (default 5)
+  consecutive verses whose combined rate clears `--known-rate`
+  (`readable_coverage()`, the same prefix-sum sweep as `longest_span` but
+  unioning every maximal run instead of keeping the widest). Runs are scored per
+  book and only the 200 most frequent unknown forms *of each book* are tried —
+  a global cap would discard exactly the corpus-rare, book-local words this is
+  for (Mahlon and Chilion are what unlock Ruth). The graded CSV also carries
+  `corpus_difficulty_rank`: `verse_difficulty` with no known set, so it grades
+  the text rather than the reader. `--vocab PATH` doubles as a vocab *profile* — different files are
   different profiles/translations, nothing special needed to swap them.
   `--learn WORD [WORD ...]` calls `update_vocab_file()` to persist newly
   learned words into that profile (case-insensitive dedup, applies to the same
@@ -115,7 +129,12 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   **Exports no verse text** — refs and derived metrics only, which is what
   keeps copyrighted translations publishable. Only vocabulary-independent
   columns ship (`total_count`, `difficulty_rank`); `comprehension_rate` and
-  `known_count` describe one reader's vocab, not a text. Book mapping is
+  `known_count` describe one reader's vocab, not a text. Also writes
+  `data/difficulty_by_translation/` — `difficulty_rank` pivoted to one column
+  per translation over a `(book_usfm, chapter, verse)` key, null where a canon
+  lacks the verse. Word-frequency tables stay local: publishing a full form
+  list of a copyrighted translation is a different question from publishing
+  refs and ranks. Book mapping is
   positional per `BOOK_ORDER`, guarded by `validate_books()` — canons differ
   (Statenvertaling inserts Baruch; the Russian Synodal text carries the
   Orthodox deuterocanon and puts the Catholic epistles before the Pauline

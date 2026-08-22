@@ -138,6 +138,12 @@ stack built in one left-to-right pass; a single right-to-left sweep pops each
 one at most once. **O(n) total, two passes.** Implementation in
 `scripts/grade.py::longest_span`.
 
+**Use a tolerance in the `P[j] >= P[i]` comparison** (`- 1e-9`). `a[k]` is a
+float, so the prefix sums drift by ~1e-16 and a span that qualifies *exactly* —
+20/20 items known, or a rate that lands on the threshold — gets rejected. This
+fails silently: you lose a verse at the margin and the answer still looks
+plausible. Pin it with a test whose span clears the threshold with equality.
+
 Edge cases to pin with tests: empty input → `None`; everything known → the whole
 corpus is one span; nothing known → empty result rather than a zero-length span;
 ties → decide and test which one you return.
@@ -173,6 +179,45 @@ for item in corpus:
 - Break ties by corpus rank ascending, so the more frequent word wins. The
   source repo's Python side omits this tiebreaker and its JS side has it — the
   two orderings then differ among ties. Add it on both sides.
+
+### Ranking by passage access instead of item count
+
+Item-unlock counts and frequency lists share a blind spot: they cannot see that
+a rare word is the *only* thing standing between the learner and a long
+continuous stretch. In a Bible corpus, Mahlon and Chilion occur a handful of
+times and rank near the bottom of any frequency list, yet knowing them opens a
+readable run through the book of Ruth, which is otherwise simple text.
+
+Score the word by the change in an **access** measure instead:
+
+```
+access(vocab) = # items inside some run of >= min_span consecutive items
+                whose *combined* rate clears the threshold
+value(w)      = access(vocab ∪ {w}) - access(vocab)
+```
+
+Four things make this work:
+
+- **Every qualifying run counts, not just the longest.** Score only the single
+  longest span and a word that opens a new run somewhere else scores zero.
+- **`min_span`.** Without a floor, two-item pockets dominate the count and the
+  measure stops meaning "passage".
+- **Segment at natural boundaries** (book, chapter, document) so a run cannot
+  straddle two unrelated texts.
+- **Measure from the learner's current vocabulary**, so a word inside an
+  already-readable stretch is correctly worth nothing.
+
+`access` comes out of the same prefix-sum sweep as §3: each stack entry is
+popped at the largest `j` with `P[j] >= P[i]`, i.e. its furthest reachable end,
+and every qualifying run is contained in one of those — so union those maximal
+runs (drop the ones shorter than `min_span`) and count the items. O(n) per
+evaluation.
+
+Cost is `O(n × candidates)`: one sweep per candidate word. Cap candidates
+**per segment**, by frequency *within that segment* — a global frequency cap
+throws away exactly the Mahlon case you built this for. The tail is hapaxes,
+which cannot move an aggregate rate. 200 per book over a 31k-verse Bible is ~3s
+in pure Python.
 
 ## 5. Optional: recall decay, effort, semantic credit
 

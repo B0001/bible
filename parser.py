@@ -519,6 +519,11 @@ def grade_passages(bible_df, vocab_stems, window, min_verse_length=1, lang="en")
     )
 
 
+# Prefix sums accumulate float error; without a tolerance an exactly-qualifying
+# span can be rejected by ~1e-16. Spans are O(corpus) long, so 1e-9 is slack.
+_SPAN_EPS = 1e-9
+
+
 def longest_span(known, total, min_rate):
     """Longest contiguous index span ``[i, j)`` with combined ``known/total >= min_rate``.
 
@@ -544,13 +549,61 @@ def longest_span(known, total, min_rate):
     best_len = best_i = best_j = 0
     j = n
     while j >= 0 and stack:
-        while stack and P[j] >= P[stack[-1]]:
+        while stack and P[j] >= P[stack[-1]] - _SPAN_EPS:
             if j - stack[-1] > best_len:
                 best_len, best_i, best_j = j - stack[-1], stack[-1], j
             stack.pop()
         j -= 1
 
     return (best_i, best_j) if best_len > 0 else None
+
+
+def readable_coverage(known, total, min_rate, min_span):
+    """How many verses sit inside *some* readable run of >= ``min_span`` verses.
+
+    Same prefix-sum + monotone-stack machinery as ``longest_span`` (see there for
+    the derivation), but instead of keeping only the widest span it takes the
+    union of every maximal one. The right-to-left sweep pops each stack entry
+    ``i`` at the largest ``j`` with ``P[j] >= P[i]``, i.e. its furthest reachable
+    end, and every qualifying span is contained in one of those -- so their union
+    is exactly the set of verses you can reach in a run of at least ``min_span``.
+
+    This is the "access" number: how much of the text is open to you right now in
+    passage-sized chunks, as opposed to isolated verses you happen to understand.
+    """
+    n = len(known)
+    P = [0.0] * (n + 1)
+    for i in range(n):
+        P[i + 1] = P[i] + known[i] - min_rate * total[i]
+
+    stack = []
+    for i in range(n + 1):
+        if not stack or P[i] < P[stack[-1]]:
+            stack.append(i)
+
+    spans = []
+    j = n
+    while j >= 0 and stack:
+        while stack and P[j] >= P[stack[-1]] - _SPAN_EPS:
+            if j - stack[-1] >= min_span:
+                spans.append((stack[-1], j))
+            stack.pop()
+        j -= 1
+
+    # Union. Spans arrive with descending right ends, so merge from the right.
+    covered = 0
+    cur_lo = cur_hi = None
+    for lo, hi in spans:
+        if cur_lo is None:
+            cur_lo, cur_hi = lo, hi
+        elif hi >= cur_lo:
+            cur_lo = min(cur_lo, lo)
+        else:
+            covered += cur_hi - cur_lo
+            cur_lo, cur_hi = lo, hi
+    if cur_lo is not None:
+        covered += cur_hi - cur_lo
+    return covered
 
 
 def grade_longest_passage(bible_df, vocab_stems, min_rate=0.95, lang="en", min_verse_length=1):
@@ -616,6 +669,131 @@ def verse_difficulty(forms, ranks, target=0.95, known=frozenset()):
     eff = sorted(0 if f in known else ranks.get(f, fallback) for f in forms)
     k = max(1, math.ceil(target * len(eff)))
     return eff[k - 1]
+
+
+def word_frequencies(token_lists):
+    """Bible-specific frequency table: one row per distinct form.
+
+    ``rank`` is corpus frequency rank (1 = most frequent, same ordering as
+    ``corpus_ranks``), ``count`` is total occurrences, ``verse_count`` the
+    number of verses containing the form, and ``cum_coverage`` the share of all
+    corpus tokens covered by this form plus every more frequent one -- i.e. how
+    much of *this* Bible you can read once you know down to this rank. General
+    word-frequency lists are not this: Bible-specific counts are what tell you
+    that learning "begat" pays and learning "computer" does not.
+    """
+    counts, doc_counts = Counter(), Counter()
+    for toks in token_lists:
+        counts.update(toks)
+        doc_counts.update(set(toks))
+    total = sum(counts.values())
+    running = 0
+    rows = []
+    for i, (form, count) in enumerate(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))):
+        running += count
+        rows.append({
+            "form": form,
+            "rank": i + 1,
+            "count": count,
+            "verse_count": doc_counts[form],
+            "cum_coverage": running / total,
+        })
+    return pl.DataFrame(
+        rows,
+        schema={"form": pl.Utf8, "rank": pl.Int64, "count": pl.Int64,
+                "verse_count": pl.Int64, "cum_coverage": pl.Float64},
+    )
+
+
+def _book_of(ref):
+    """'1 Samuel 3:10' -> '1 Samuel'; a ref with no ':' is its own book."""
+    head, sep, _ = ref.rpartition(":")
+    return head.rpartition(" ")[0] if sep else ref
+
+
+def passage_leverage(bible_df, vocab_stems, min_rate=0.95, lang="en", top_n=20,
+                     min_verse_length=1, min_span=5, per_book_candidates=200):
+    """Rank unknown forms by how much they widen *your current* access to passages.
+
+    Access is measured against the vocabulary you have now: the number of verses
+    that sit inside a run of >= ``min_span`` consecutive verses whose combined
+    comprehension rate is >= ``min_rate`` (``readable_coverage``), summed over
+    books. For each candidate form the measure is recomputed with that form
+    known; ``verses_gained`` is the increase -- the passage-sized reading that
+    learning one word opens up, over and above what you can already read.
+
+    Every readable run counts, not just the longest, which is what makes a
+    corpus-rare word worth anything: Mahlon and Chilion appear a handful of
+    times, but they stand between you and a continuous run through Ruth, and a
+    frequency list ranks them near the bottom. Runs never straddle a book
+    boundary, and runs shorter than ``min_span`` are not access to a passage.
+
+    Returns ``stem``, ``verses_gained``, ``book`` (where the biggest single-book
+    gain came from), ``occurrences`` (corpus-wide); top ``top_n`` rows, gain
+    descending, forms with no gain omitted.
+    """
+    refs = bible_df["ref"].to_list()
+    forms_per_verse = [tokenize_and_stem(v, lang) for v in bible_df["verse"]]
+    totals = [len(f) for f in forms_per_verse]
+    knowns = [
+        sum(1 for f in forms if f in vocab_stems) if t >= min_verse_length else 0
+        for forms, t in zip(forms_per_verse, totals)
+    ]
+
+    corpus_counts = Counter()
+    for forms in forms_per_verse:
+        corpus_counts.update(forms)
+
+    # Contiguous runs of the same book, in file order.
+    books = []
+    for i, ref in enumerate(refs):
+        book = _book_of(ref)
+        if books and books[-1][0] == book:
+            books[-1][2] = i + 1
+        else:
+            books.append([book, i, i + 1])
+
+    gains, best_book, best_gain = Counter(), {}, {}
+    for book, lo, hi in books:
+        k, t = knowns[lo:hi], totals[lo:hi]
+        base = readable_coverage(k, t, min_rate, min_span)
+
+        occ = {}          # unknown form -> {local verse index: count in it}
+        book_counts = Counter()
+        for j in range(lo, hi):
+            for form, c in Counter(forms_per_verse[j]).items():
+                if form in vocab_stems:
+                    continue
+                occ.setdefault(form, {})[j - lo] = c
+                book_counts[form] += c
+
+        # ponytail: only the per_book_candidates most frequent unknown forms of
+        # each book are tried -- cost is O(book_len * candidates). The tail is
+        # hapaxes, which cannot move an aggregate span. Raise the cap if a
+        # hapax-heavy corpus proves otherwise.
+        candidates = sorted(book_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        for form, _ in candidates[:per_book_candidates]:
+            k2 = list(k)
+            for idx, c in occ[form].items():
+                if t[idx] >= min_verse_length:
+                    k2[idx] += c
+            gain = readable_coverage(k2, t, min_rate, min_span) - base
+            if gain <= 0:
+                continue
+            gains[form] += gain
+            if gain > best_gain.get(form, 0):
+                best_gain[form], best_book[form] = gain, book
+
+    ranked = sorted(gains.items(), key=lambda kv: (-kv[1], kv[0]))[:top_n]
+    return pl.DataFrame(
+        [
+            {"stem": f, "verses_gained": g, "book": best_book[f],
+             "occurrences": corpus_counts[f]}
+            for f, g in ranked
+        ],
+        schema={"stem": pl.Utf8, "verses_gained": pl.Int64,
+                "book": pl.Utf8, "occurrences": pl.Int64},
+    )
 
 
 def next_words_to_learn(bible_df, vocab_stems, known_rate=0.95, min_verse_length=1, top_n=20, lang="en"):
@@ -792,6 +970,30 @@ def main():
         "(requires [semantic] extra: spacy + en_core_web_md)",
     )
     parser.add_argument(
+        "--word-freq-out",
+        help="output CSV path for the Bible-specific word frequency table "
+        "(form, rank, count, verse_count, cum_coverage)",
+    )
+    parser.add_argument(
+        "--passage-leverage",
+        type=int,
+        default=0,
+        help="rank top N unknown words by the verses of contiguous readable text "
+        "learning them adds (per book); 0 disables (default 0)",
+    )
+    parser.add_argument(
+        "--min-span",
+        type=int,
+        default=5,
+        help="shortest run of verses that counts as a passage for --passage-leverage "
+        "(default 5)",
+    )
+    parser.add_argument(
+        "--passage-leverage-out",
+        help="output CSV path for the passage-leverage ranking "
+        "(required if --passage-leverage > 0)",
+    )
+    parser.add_argument(
         "--longest-passage-out",
         help="output CSV path for the longest readable passage at --known-rate",
     )
@@ -800,6 +1002,8 @@ def main():
         parser.error("--passage-out is required when --passage-window > 1")
     if args.next_words > 0 and not args.next_words_out:
         parser.error("--next-words-out is required when --next-words > 0")
+    if args.passage_leverage > 0 and not args.passage_leverage_out:
+        parser.error("--passage-leverage-out is required when --passage-leverage > 0")
     if args.study > 0 and not args.study_out:
         parser.error("--study-out is required when --study > 0")
     if args.review and args.review[1] not in ("correct", "wrong"):
@@ -843,6 +1047,9 @@ def main():
     difficulties = [
         verse_difficulty(f, ranks, known=vocab_stems) for f in all_forms
     ]
+    # Same measure with nothing known for free: pure "how hard is this verse in
+    # this Bible's own vocabulary", independent of who is reading.
+    corpus_difficulties = [verse_difficulty(f, ranks) for f in all_forms]
 
     if args.decay or args.semantic:
         rates = [
@@ -877,6 +1084,7 @@ def main():
         pl.Series("known_count", knowns, dtype=pl.Int64),
         pl.Series("total_count", totals, dtype=pl.Int64),
         pl.Series("difficulty_rank", difficulties, dtype=pl.Int64),
+        pl.Series("corpus_difficulty_rank", corpus_difficulties, dtype=pl.Int64),
     )
 
     with _open_write(args.out) as f:
@@ -922,6 +1130,21 @@ def main():
         print(
             f"Study queue: {review_count} due review(s), {learn_count} new word(s) -> {args.study_out}"
         )
+
+    if args.word_freq_out:
+        freq = word_frequencies(all_forms)
+        with _open_write(args.word_freq_out) as f:
+            freq.write_csv(f)
+        print(f"Ranked {freq.height} distinct forms by corpus frequency -> {args.word_freq_out}")
+
+    if args.passage_leverage > 0:
+        leverage = passage_leverage(
+            bible_df, vocab_stems, args.known_rate, args.lang,
+            args.passage_leverage, args.min_verse_length, args.min_span,
+        )
+        with _open_write(args.passage_leverage_out) as f:
+            leverage.write_csv(f)
+        print(f"Ranked {leverage.height} words by passage leverage -> {args.passage_leverage_out}")
 
     if args.longest_passage_out:
         lp = grade_longest_passage(
