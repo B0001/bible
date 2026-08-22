@@ -251,7 +251,7 @@ def validate_books(bible_id, books):
 
 
 def export_bible(entry, site_dir, out_dir):
-    """Write one translation's Parquet. Returns {usfm: native book name}."""
+    """Write one translation's Parquet. Returns ({usfm: native book name}, table)."""
     with open(os.path.join(site_dir, "data", f"{entry['id']}.json"), encoding="utf-8") as f:
         bible = json.load(f)
 
@@ -292,7 +292,30 @@ def export_bible(entry, site_dir, out_dir):
     table.write_parquet(os.path.join(dest, "train-00000.parquet"), compression="zstd")
     print(f"  {bible_id:16} {len(refs):6} verses  {len(codes):3} books  "
           f"{len(ranks):6} distinct forms")
-    return names
+    return names, table
+
+
+def write_wide_difficulty(out_dir, tables):
+    """One row per (book_usfm, chapter, verse), one difficulty column per
+    translation — the cross-language view: how hard is this verse in each text.
+
+    Full outer joins, because canons and versification differ; a null means the
+    verse is absent from that translation. Ranks are per translation, so compare
+    them as orderings, not as raw numbers.
+    """
+    KEY = ["book_usfm", "chapter", "verse"]
+    wide = None
+    for bible_id, table in tables.items():
+        part = table.select(KEY + ["difficulty_rank"]).rename(
+            {"difficulty_rank": f"difficulty_{bible_id.replace('-', '_')}"}
+        )
+        wide = part if wide is None else wide.join(part, on=KEY, how="full", coalesce=True)
+    wide = wide.sort(KEY, nulls_last=True)
+    dest = os.path.join(out_dir, "data", "difficulty_by_translation")
+    os.makedirs(dest, exist_ok=True)
+    wide.write_parquet(os.path.join(dest, "train-00000.parquet"), compression="zstd")
+    print(f"  {'wide':16} {wide.height:6} verse keys  {wide.width - 3:3} translations")
+    return wide
 
 
 def write_books_csv(out_dir, bible_ids, names_by_bible):
@@ -354,6 +377,8 @@ tags:
   - vocabulary
 configs:
 {configs}
+  - config_name: difficulty_by_translation
+    data_files: data/difficulty_by_translation/train-*.parquet
   - config_name: books
     data_files: books.csv
 ---
@@ -401,6 +426,14 @@ a text. Everything published here is vocabulary-independent.
 | config | name | language | verses |
 |---|---|---|---|
 {rows}
+
+## difficulty_by_translation
+
+One row per `(book_usfm, chapter, verse)` and one `difficulty_<translation>`
+column per text — the same `difficulty_rank`, pivoted so a verse's difficulty
+can be read across translations at a glance. Null means the verse is absent
+from that translation (canons and versification differ). Ranks are computed
+per translation, so compare them as orderings, not as raw numbers.
 
 ## books.csv
 
@@ -472,10 +505,14 @@ def main(argv=None):
     os.makedirs(args.out_dir, exist_ok=True)
     entries, names_by_bible = [], {}
     print(f"Exporting {len(manifest['bibles'])} translations to {args.out_dir}/")
+    tables = {}
     for entry in manifest["bibles"]:
-        names_by_bible[entry["id"]] = export_bible(entry, args.site_dir, args.out_dir)
+        names_by_bible[entry["id"]], tables[entry["id"]] = export_bible(
+            entry, args.site_dir, args.out_dir
+        )
         entries.append(entry)
 
+    write_wide_difficulty(args.out_dir, tables)
     write_books_csv(args.out_dir, [e["id"] for e in entries], names_by_bible)
     write_readme(args.out_dir, entries)
     print(f"\nDone. Upload with:\n  huggingface-cli upload <user>/<dataset> {args.out_dir} .")

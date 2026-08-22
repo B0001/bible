@@ -20,6 +20,8 @@ from parser import (
     load_vocab,
     main,
     next_words_to_learn,
+    passage_leverage,
+    readable_coverage,
     recall_prob,
     record_review,
     study_queue,
@@ -29,6 +31,7 @@ from parser import (
     verse_difficulty,
     verse_effort,
     weighted_comprehension_rate,
+    word_frequencies,
 )
 
 _wordfreq_available = importlib.util.find_spec("wordfreq") is not None
@@ -854,3 +857,79 @@ def test_cli_writes_difficulty_rank(tmp_path, monkeypatch):
                     difficulty_ranks.append(int(rank_str))
 
         assert len(difficulty_ranks) > 0, "No non-null difficulty_rank values found"
+
+
+# --------------------------------------------------------------------------- #
+# Bible-specific word frequency + passage leverage
+# --------------------------------------------------------------------------- #
+
+
+def test_word_frequencies_ranks_and_covers():
+    df = word_frequencies([["cat", "cat", "dog"], ["cat", "bird"]])
+    rows = {r["form"]: r for r in df.iter_rows(named=True)}
+    assert rows["cat"]["rank"] == 1
+    assert rows["cat"]["count"] == 3
+    assert rows["cat"]["verse_count"] == 2
+    # ties break lexicographically, so bird (2) before dog (3)
+    assert rows["bird"]["rank"] == 2 and rows["dog"]["rank"] == 3
+    assert rows["cat"]["cum_coverage"] == pytest.approx(0.6)
+    assert df["cum_coverage"].to_list()[-1] == pytest.approx(1.0)
+
+
+def test_readable_coverage_unions_every_run_not_just_the_longest():
+    known = [1, 1, 1, 0, 1, 1, 1]
+    total = [1] * 7
+    # two runs of 3 either side of an unknown verse; min_span 3 keeps both
+    assert readable_coverage(known, total, 1.0, 3) == 6
+    # min_span 4 leaves nothing: no run of 4 is fully known
+    assert readable_coverage(known, total, 1.0, 4) == 0
+
+
+def test_readable_coverage_matches_brute_force():
+    known = [2, 1, 3, 0, 2, 2, 1, 3]
+    total = [2, 2, 3, 3, 2, 2, 2, 3]
+    for rate in (0.5, 0.8, 0.95):
+        for span in (2, 3, 4):
+            expected = set()
+            for i in range(len(known)):
+                for j in range(i + span, len(known) + 1):
+                    if sum(known[i:j]) >= rate * sum(total[i:j]) - 1e-9:
+                        expected |= set(range(i, j))
+            assert readable_coverage(known, total, rate, span) == len(expected)
+
+
+def _leverage_corpus():
+    """Two books. 'Alpha' has a rare word gating a 4-verse run; 'Beta' has a
+    word that appears just as often but scattered so it gates nothing."""
+    known = "aa bb cc dd"  # four known words per verse
+    rows = [("Alpha 1:%d" % i, f"{known} mahlon") for i in range(1, 5)]
+    rows += [("Beta 1:%d" % i, f"{known} zzz xxx" if i % 2 else known) for i in range(1, 5)]
+    refs, verses = zip(*rows)
+    return pl.DataFrame({"ref": list(refs), "verse": list(verses)})
+
+
+def test_passage_leverage_prefers_the_word_that_unlocks_a_run():
+    df = _leverage_corpus()
+    out = passage_leverage(df, {"aa", "bb", "cc", "dd"}, min_rate=0.95, top_n=5, min_span=3)
+    rows = {r["stem"]: r for r in out.iter_rows(named=True)}
+    assert out["stem"][0] == "mahlon"
+    assert rows["mahlon"]["verses_gained"] == 4
+    assert rows["mahlon"]["book"] == "Alpha"
+    assert rows["mahlon"]["occurrences"] == 4
+    # zzz appears in Beta but never opens a run of min_span verses
+    assert "zzz" not in rows
+
+
+def test_passage_leverage_counts_gain_over_what_you_already_read():
+    """A word inside an already-readable run is worth nothing; the same word
+    just outside it is worth the verses it adds."""
+    verses = ["aa bb cc dd"] * 6 + ["aa bb cc dd rare rare rare rare"] * 2
+    df = pl.DataFrame({"ref": [f"Alpha 1:{i}" for i in range(1, 9)], "verse": verses})
+    out = passage_leverage(df, {"aa", "bb", "cc", "dd"}, min_rate=0.95, top_n=5, min_span=3)
+    rows = {r["stem"]: r for r in out.iter_rows(named=True)}
+    assert rows["rare"]["verses_gained"] == 2  # extends the run from 6 to 8
+
+
+def test_passage_leverage_empty_when_nothing_helps():
+    df = pl.DataFrame({"ref": ["Gen 1:1"], "verse": ["alpha beta gamma delta"]})
+    assert passage_leverage(df, set()).height == 0
