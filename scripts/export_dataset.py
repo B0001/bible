@@ -306,7 +306,7 @@ def write_wide_difficulty(out_dir, tables):
     KEY = ["book_usfm", "chapter", "verse"]
     wide = None
     for bible_id, table in tables.items():
-        part = table.select(KEY + ["difficulty_rank"]).rename(
+        part = table.select([*KEY, "difficulty_rank"]).rename(
             {"difficulty_rank": f"difficulty_{bible_id.replace('-', '_')}"}
         )
         wide = part if wide is None else wide.join(part, on=KEY, how="full", coalesce=True)
