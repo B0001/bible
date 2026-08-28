@@ -902,8 +902,8 @@ def _leverage_corpus():
     """Two books. 'Alpha' has a rare word gating a 4-verse run; 'Beta' has a
     word that appears just as often but scattered so it gates nothing."""
     known = "aa bb cc dd"  # four known words per verse
-    rows = [("Alpha 1:%d" % i, f"{known} mahlon") for i in range(1, 5)]
-    rows += [("Beta 1:%d" % i, f"{known} zzz xxx" if i % 2 else known) for i in range(1, 5)]
+    rows = [(f"Alpha 1:{i}", f"{known} mahlon") for i in range(1, 5)]
+    rows += [(f"Beta 1:{i}", f"{known} zzz xxx" if i % 2 else known) for i in range(1, 5)]
     refs, verses = zip(*rows)
     return pl.DataFrame({"ref": list(refs), "verse": list(verses)})
 

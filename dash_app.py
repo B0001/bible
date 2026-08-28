@@ -268,7 +268,7 @@ def get_read_refs(bible_id):
     # errors and pool timeouts. Read tracking is a convenience -- losing it must
     # never take the reader down, so every backend fault degrades to "nothing
     # marked read" and is logged.
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 -- see comment above
         log.warning("reads read error: %s", e)
         return set()
 
@@ -282,7 +282,9 @@ def _mark_read(bible_id, refs):
                 "ON CONFLICT DO NOTHING",
                 [(bible_id, r) for r in refs],
             )
-    except Exception as e:
+    # Broad by the same argument as get_read_refs: a failed write must not
+    # break the page, only lose the mark.
+    except Exception as e:  # noqa: BLE001
         log.warning("mark_read error: %s", e)
 
 
@@ -294,7 +296,7 @@ def _mark_unread(bible_id, refs):
                 f"DELETE FROM reads WHERE bible_id = {_PH} AND ref = {_PH}",
                 [(bible_id, r) for r in refs],
             )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 -- as above
         log.warning("mark_unread error: %s", e)
 
 
