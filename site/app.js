@@ -194,7 +194,7 @@ for (const id of ['bible-select', 'loading', 'vocab', 'vocab-label',
   'search', 'unread-only',
   'export-data', 'import-data', 'import-file', 'progress',
   'verse-body', 'prev-page', 'next-page', 'page-info', 'error',
-  'audio-panel', 'audio-player', 'heatmap-toggle', 'pauses-toggle', 'level',
+  'audio-panel', 'audio-player', 'heatmap-toggle', 'pauses-toggle', 'speed-label', 'level',
   'level-label', 'learn-next',
   'route-read', 'route-browse', 'route-settings',
   'reader', 'reader-count', 'reader-prev', 'reader-done', 'reader-next']) {
@@ -702,6 +702,33 @@ el.pausesToggle.addEventListener('change', () => {
   pausesOn = el.pausesToggle.checked;
   saveJSON('audio:pauses', pausesOn);
   if (bible) renderTable();
+});
+
+// Audio keyboard shortcuts: space play/pause, arrows +/-2s, Esc clears a word
+// loop, -/= playback speed (0.4-2.5x, the useful range for drilling
+// pronunciation). Ignored while typing, and while the audio panel is hidden.
+function setSpeed(rate) {
+  const r = Math.min(2.5, Math.max(0.4, Math.round(rate * 10) / 10));
+  // defaultPlaybackRate too: the media load algorithm resets playbackRate to
+  // it, so without this the speed silently snaps back on every chapter change.
+  el.audioPlayer.playbackRate = r;
+  el.audioPlayer.defaultPlaybackRate = r;
+  el.speedLabel.textContent = r.toFixed(1) + '\u00d7';
+  saveJSON('audio:speed', r);
+}
+setSpeed(loadJSON('audio:speed', 1));
+
+document.addEventListener('keydown', (e) => {
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || el.audioPanel.hidden) return;
+  const a = el.audioPlayer;
+  switch (e.key) {
+    case ' ': e.preventDefault(); a.paused ? a.play() : a.pause(); break;
+    case 'ArrowLeft': a.currentTime = Math.max(0, a.currentTime - 2); break;
+    case 'ArrowRight': a.currentTime += 2; break;
+    case 'Escape': loopWord = null; break;
+    case '-': setSpeed(a.playbackRate - 0.1); break;
+    case '=': case '+': setSpeed(a.playbackRate + 0.1); break;
+  }
 });
 
 el.prevPage.addEventListener('click', () => { page--; renderTable(); });

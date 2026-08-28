@@ -161,3 +161,32 @@ def test_dark_mode_background(loaded_page):
     bg = page.eval_on_selector("body", "el => getComputedStyle(el).backgroundColor")
     assert bg == "rgb(15, 17, 21)"
     page.emulate_media(color_scheme="light")
+
+
+def test_audio_speed_shortcuts(loaded_page):
+    # The audio panel is hidden without exported audio, and the shortcuts
+    # deliberately no-op while it is, so unhide it to drive them.
+    page, errors = loaded_page
+    page.evaluate("document.getElementById('audio-panel').hidden = false")
+    page.click("body")
+    page.keyboard.press("=")
+    page.keyboard.press("=")
+    rate = page.eval_on_selector("#audio-player", "el => el.playbackRate")
+    assert abs(rate - 1.2) < 1e-6
+    assert page.eval_on_selector("#speed-label", "el => el.textContent") == "1.2×"
+    # defaultPlaybackRate must track it: the media load algorithm resets
+    # playbackRate to it, so without that the speed snaps back on chapter change.
+    assert page.eval_on_selector("#audio-player", "el => el.defaultPlaybackRate") == rate
+
+    # Typing must not steal the keys — '=' in the search box is a character.
+    page.evaluate("location.hash = '#browse'")
+    page.wait_for_function("!document.getElementById('route-browse').hidden", timeout=5000)
+    page.fill("#search", "")
+    page.click("#search")
+    page.keyboard.press("=")
+    assert page.eval_on_selector("#audio-player", "el => el.playbackRate") == rate
+    assert page.eval_on_selector("#search", "el => el.value") == "="
+
+    page.fill("#search", "")
+    page.evaluate("document.getElementById('audio-panel').hidden = true")
+    assert errors == []
