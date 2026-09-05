@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="he">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mikra Sync</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Mikra&nbsp;Sync</h1>
+  <div class="controls">
+    <select id="bookSelect" title="Book"></select>
+    <select id="chapterSelect" title="Chapter"></select>
+    <label class="toggle"><input type="checkbox" id="heatmapToggle"> emphasis</label>
+    <label class="toggle"><input type="checkbox" id="pausesToggle"> pauses</label>
+    <label class="toggle"><input type="checkbox" id="autoscrollToggle" checked> follow</label>
+    <span id="speedLabel" title="playback speed ( - / = )">1.00×</span>
+  </div>
+</header>
+
+<main>
+  <div id="reader" dir="rtl" lang="he"></div>
+</main>
+
+<footer>
+  <audio id="audio" controls preload="auto"></audio>
+  <div id="statusBar">
+    <span id="wordInfo">—</span>
+    <span id="loopInfo"></span>
+    <span class="hints">click: seek · dbl-click: loop word · space: play · ←/→: ±2s · Esc: stop loop</span>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
