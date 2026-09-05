@@ -1,0 +1,5 @@
+# Alignment pipeline (heavy; only needed for `mikra align`)
+stable-ts>=2.17
+torch>=2.1
+# Audio metadata (duration)
+mutagen>=1.47

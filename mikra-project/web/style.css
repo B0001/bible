@@ -1,0 +1,78 @@
+:root {
+  --bg: #14120e;
+  --panel: #1e1b15;
+  --text: #e8e2d4;
+  --dim: #8a8272;
+  --accent: #d9a441;
+  --highlight: #3d5a3d;
+  --loop: #6b3d5a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+header, footer {
+  background: var(--panel);
+  padding: 0.5rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+header h1 { font-size: 1rem; margin: 0; color: var(--accent); letter-spacing: 0.06em; }
+.controls { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+select { background: var(--bg); color: var(--text); border: 1px solid var(--dim); border-radius: 4px; padding: 0.2rem 0.4rem; }
+.toggle { font-size: 0.8rem; color: var(--dim); display: flex; align-items: center; gap: 0.25rem; cursor: pointer; }
+#speedLabel { font-size: 0.8rem; color: var(--dim); }
+
+main { flex: 1; overflow-y: auto; padding: 1.5rem clamp(1rem, 8vw, 6rem); }
+
+#reader {
+  font-family: "SBL Hebrew", "Ezra SIL", "Taamey Frank CLM", "David", serif;
+  font-size: clamp(1.6rem, 2.4vw, 2.2rem);
+  line-height: 2.4;
+  text-align: right;
+}
+
+.word {
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0.05em 0.12em;
+  transition: background 120ms;
+}
+.word:hover { background: #2c2820; }
+.word.current { background: var(--highlight); }
+.word.looping { background: var(--loop); }
+
+.verse-num {
+  color: var(--accent);
+  font-size: 0.55em;
+  vertical-align: super;
+  margin: 0 0.4em;
+  user-select: none;
+}
+
+.pause-marker {
+  display: none;
+  color: var(--dim);
+  margin: 0 0.35em;
+  user-select: none;
+}
+body.show-pauses .pause-marker { display: inline; }
+
+footer { flex-direction: column; align-items: stretch; gap: 0.4rem; }
+audio { width: 100%; }
+#statusBar { display: flex; gap: 1.5rem; font-size: 0.78rem; color: var(--dim); flex-wrap: wrap; }
+#wordInfo { color: var(--text); font-variant-numeric: tabular-nums; }
+#loopInfo { color: var(--accent); }
+.hints { margin-inline-start: auto; }
