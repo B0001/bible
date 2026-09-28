@@ -408,3 +408,16 @@ def test_stitch_lineate_beats_either_alone():
         assert cost <= rhyme.lineate(corpora[t], "AABB", lo=2, hi=10)[1] + 1e-9
     assert rhyme.scheme_satisfaction(lines, "AABB") == (2, 2)
     assert path == ["b", "a"]
+
+
+def test_stitch_lineate_short_verses_stay_polynomial():
+    # Runs of very short verses let one line cross many verse boundaries;
+    # enumerating whole lines branched N ways per crossing (1 Chronicles 1
+    # took 8 s). 8 translations x 120 one-word verses, hi = 16.
+    import time
+
+    corpora = {f"t{n}": [f"w{'abcdefgh'[(n * v) % 8]}." for v in range(120)] for n in range(8)}
+    t0 = time.time()
+    lines, _, _ = rhyme.stitch_lineate(corpora, "AABB", distance=lambda a, b: float(a == b))
+    assert time.time() - t0 < 30  # ~5 s here; exponential would be hours
+    assert len(" ".join(lines).split()) == 120

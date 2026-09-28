@@ -373,12 +373,15 @@ def stitch_lineate(
     over every translation assignment, of that assignment's register penalty
     plus ``lineate`` on the text it selects (the tests check exactly this).
 
-    DP over line boundaries. A boundary is (verse, translation, tokens of that
-    verse consumed), or a verse start, where the translation is not chosen yet.
-    Its state also carries the previous verse's translation (for the register
-    term), the line index in the strophe, and the end *words* of the open rhyme
-    anchors. From each boundary every legal next line is enumerated, branching
-    over translations at each verse boundary it crosses.
+    DP over two kinds of point, processed in text order: line boundaries
+    inside a verse (translation fixed), and verse starts (translation not yet
+    chosen), which may fall mid-line. A state carries the point, the previous
+    verse's translation (register term), the words already in the current
+    line and whether it has passed a legal break (for the length rule), the
+    line index in the strophe, and the end *words* of open rhyme anchors.
+    Each transition walks within one verse only. Enumerating whole lines
+    instead branches N ways at every verse a line crosses, and that was
+    exponential on runs of short verses: 1 Chronicles 1, 8 translations, 8 s.
     """
     names = list(corpora)
     n_verses = len(corpora[names[0]])
@@ -396,106 +399,93 @@ def stitch_lineate(
     def breakable(t, v, o):  # may a line end after o tokens of verse v in t?
         return o == len(toks[t][v]) or bool(CLAUSE_END.search(toks[t][v][o - 1]))
 
-    def norm(v, t, o):
-        """A fully consumed verse is the start of the next non-blank one."""
-        if t is not None and o == len(toks[t][v]):
-            v, t, o = v + 1, None, 0
-        if t is None:
-            while v < n_verses and not choices[v]:
-                v += 1  # blank in every translation: contributes nothing
-        return (v, t, o)
+    def verse_start(v):  # next verse at or after v that is not blank everywhere
+        while v < n_verses and not choices[v]:
+            v += 1
+        return v
 
-    @cache
-    def lines_from(v, t, o, last):
-        """(end position, words, register cost, end word, pieces) of each legal line."""
-        out = []
-
-        def walk(v, t, o, last, words, reg, pieces, seen_break):
-            if v >= n_verses:
-                return
-            if t is None:
-                if not choices[v]:
-                    walk(v + 1, None, 0, last, words, reg, pieces, seen_break)
-                    return
-                for t2 in choices[v]:
-                    r = gamma * _register(penalties, default_penalty, last, t2) if last else 0.0
-                    walk(v, t2, 0, t2, words, reg + r, pieces, seen_break)
-                return
-            n = len(toks[t][v])
-            for o2 in range(o + 1, n + 1):
-                w = words + o2 - o
-                if not breakable(t, v, o2):
-                    continue
-                if w > hi and seen_break:
-                    return
-                piece = (*pieces, (v, t, o, o2))
-                out.append(((*norm(v, t, o2), t), w, reg,
-                            terminal_word(toks[t][v][o2 - 1]), piece))
-                if w > hi:
-                    return  # the first break past hi ends the line
-                seen_break = True
-            walk(v + 1, None, 0, t, words + n - o, reg, (*pieces, (v, t, o, n)), seen_break)
-
-        # Legality is per branch (seen_break travels with the walk): a long
-        # line is legal for a translation choice that has no earlier break,
-        # exactly as lineate() would judge that choice's text.
-        walk(v, t, o, last, 0, 0.0, (), False)
-        return out
-
-    start = (*norm(0, None, 0), None, 0)
+    # state: (verse, translation | None, consumed, last translation,
+    #         words in current line, passed a break, line index, *anchor words)
+    start = (verse_start(0), None, 0, None, 0, False, 0)
     best: dict[tuple, float] = {start: 0.0}
     back: dict[tuple, tuple] = {}
-    # Process boundaries in text order: every line moves strictly forward, and
-    # a verse start sorts before any mid-verse boundary of that verse, so a
-    # state is final when popped.
-    def order_key(st):
-        return (st[0], 0 if st[1] is None else 1, st[2])
-
-    heap = [(order_key(start), 0, start)]
+    heap = [((start[0], 0, 0), 0, start)]
     tick = 1
     done: set[tuple] = set()
     finals = []
+
+    def relax(src, dst, cost, piece):
+        nonlocal tick
+        if dst not in best or cost < best[dst] - 1e-12:
+            best[dst] = cost
+            back[dst] = (src, piece)
+            key = (dst[0], 0 if dst[1] is None else 1, dst[2])
+            heapq.heappush(heap, (key, tick, dst))
+            tick += 1
+
     while heap:
         _, _, st = heapq.heappop(heap)
         if st in done:
             continue
         done.add(st)
-        v, t, o, last, i, *anchor_words = st
+        v, t, o, last, w0, seen0, i, *anchor_words = st
         if v >= n_verses:
             finals.append(st)
             continue
         held = dict(zip(keep[i - 1] if i else (), anchor_words, strict=True))
-        for (nv, nt, no, nlast), w, reg, end, pieces in lines_from(v, t, o, last):
-            c = best[st] + reg + beta * abs(w - target) / target
-            for a, b in pairs:
-                if b == i:
-                    c += alpha * (distance(held[a], end) - 1)
-            ni = (i + 1) % k
-            held_n = {**held, i: end}
-            nxt = (nv, nt, no, nlast, ni, *((held_n[a] for a in keep[i]) if ni else ()))
-            if nxt not in best or c < best[nxt] - 1e-12:
-                best[nxt] = c
-                back[nxt] = (st, pieces)
-                heapq.heappush(heap, (order_key(nxt), tick, nxt))
-                tick += 1
+        if t is None:
+            opts = [(t2, gamma * _register(penalties, default_penalty, last, t2)
+                     if last else 0.0) for t2 in choices[v]]
+        else:
+            opts = [(t, 0.0)]
+        for tt, reg in opts:
+            base = best[st] + reg
+            n = len(toks[tt][v])
+            seen = seen0
+            for o2 in range(o + 1, n + 1):
+                if not breakable(tt, v, o2):
+                    continue
+                w = w0 + o2 - o
+                if w > hi and seen:
+                    break
+                end = terminal_word(toks[tt][v][o2 - 1])
+                c = base + beta * abs(w - target) / target
+                for a, b in pairs:
+                    if b == i:
+                        c += alpha * (distance(held[a], end) - 1)
+                ni = (i + 1) % k
+                held_n = {**held, i: end}
+                anchors = tuple(held_n[a] for a in keep[i]) if ni else ()
+                point = (verse_start(v + 1), None, 0) if o2 == n else (v, tt, o2)
+                relax(st, (*point, tt, 0, False, ni, *anchors), c, (v, tt, o, o2, True))
+                if w > hi:
+                    break  # the first break past hi must end the line
+                seen = True
+            else:
+                # Verse exhausted without the line having to end (its end is
+                # a break at <= hi words): the line may also run on.
+                nv = verse_start(v + 1)
+                if nv < n_verses:
+                    relax(st, (nv, None, 0, tt, w0 + n - o, True, i, *anchor_words), base,
+                          (v, tt, o, n, False))
     if not finals:
         return [], [], 0.0
     final = min(finals, key=best.__getitem__)
     cost = best[final]
-    lines_pieces = []
+    pieces = []
     st = final
     while st != start:
-        st, pieces = back[st]
-        lines_pieces.append(pieces)
-    lines_pieces.reverse()
+        st, piece = back[st]
+        pieces.append(piece)
+    pieces.reverse()
     path: list[str] = [names[0]] * n_verses
-    lines = []
-    for pieces in lines_pieces:
-        words = []
-        for v, t, a, b in pieces:
-            path[v] = t
-            words.extend(toks[t][v][a:b])
-        lines.append(" ".join(words))
+    lines, words = [], []
+    for v, t, a, b, ends in pieces:
+        path[v] = t
+        words.extend(toks[t][v][a:b])
+        if ends:
+            lines.append(" ".join(words))
+            words = []
     return lines, path, cost
 
 
