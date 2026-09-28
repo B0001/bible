@@ -137,9 +137,62 @@ whenever it has one that doesn't.
 python rhyme.py lineate --bible data/kjv.txt --ref "psalms 114:" --content
 ```
 
-Next steps not taken: lineation over *stitched* choices (translation per
-verse and breaks jointly — the product of both gains, at the cost of a larger
-state); breaks at conjunctions ("and", "for") as well as punctuation.
+## Round 3: translation and line breaks chosen together
+
+`stitch_lineate()` picks each verse's translation *and* the line breaks in
+one exact DP. The objective is lineation's (rhyme reward, length term) plus
+stitching's register penalty between consecutive verses. Every verse appears
+verbatim in exactly one translation. A line may run across a verse boundary,
+so one line can join two translations.
+
+The claim the tests check: the returned cost equals the minimum, over *every*
+translation assignment, of that assignment's register penalty plus
+`lineate()` on the text it selects (brute force for AABB, ABAB and XAXA). With
+one translation, it reduces to `lineate()`.
+
+Full Bible, strophes restarting each chapter, content-only cost, γ = 0:
+
+| AABB content rhymes | N=1 | 2 | 3 | 4 | 8 |
+|---|---|---|---|---|---|
+| stitch | 14 | 34 | 60 | 82 | 88 |
+| lineate (KJV) | 366 | 366 | 366 | 366 | 366 |
+| **joint** | **366** | **532** | **838** | **1143** | **1260** |
+
+ABAB, N = 8: joint 1826 content rhymes (5.05% of pairs) vs 427 for lineate
+and 73 for stitch.
+
+**Finding: the gains don't add up, they multiply.** With 8 translations the
+joint search finds 1260 content rhymes, 2.8× the sum of the two engines alone
+(366 + 88). A different translation of a verse means different clause-final
+words to break on, so each choice gives the line breaker new candidates. Unlike
+stitching, the joint result keeps rising as translations are added (still +117
+from 4 to 8). The joint rate is 3.5% of AABB pairs (5% ABAB). That's still not
+verse, but it's 38× the one-verse-per-line baseline on content words. At N = 1
+the joint's content count equals lineate's exactly (366); the all-rhyme counts
+differ by 3 (433 vs 430), from ties between equal-cost lineations.
+
+Example (`python rhyme.py joint` with all eight texts, `--ref "psalms 1:"
+--content`): YLT supplies "…is his delight, / And in His law he doth meditate
+by day and by night". Then BBE ends the psalm with "upright / upright", which
+scores nothing because a repeated word isn't a rhyme.
+
+Performance: the first version enumerated whole lines, branching N ways at
+every verse boundary a line crossed. That's exponential on runs of short
+verses (1 Chronicles 1: 8 s), and a full-Bible run didn't finish in 35
+minutes. A verse start inside an open line is now its own DP state (words so
+far, break seen), so each step stays within one verse. The full Bible with 8
+translations takes 4.4 min for AABB and 10.6 min for ABAB. The slowest chapter
+is Nehemiah 10's name list (1.7 s AABB, 12 s ABAB).
+
+The CLI's `joint` defaults to `--gamma 0.1`. At γ = 0 translations switch on
+arbitrary ties, and a small penalty keeps a verse's switch for when it buys a
+rhyme or a better line length. The table above uses γ = 0, the upper bound.
+
+Reproducing: the five scrollmapper texts were written to `data/<name>.txt`
+(gitignored) in `verse -- ref` form, with refs copied positionally from the
+tushortz KJV after asserting chapter:verse agree for all 31,102 rows.
+
+Not done: breaks at conjunctions ("and", "for") as well as punctuation.
 
 ## Rhyme classes and the Laplacian
 

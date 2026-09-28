@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rhymed Bible text: three engines and a rhyme-class graph.
+"""Rhymed Bible text: four engines and a rhyme-class graph.
 
 Neither engine produces a translation. Both produce a *rhymed composite* and
 report how much of the requested rhyme scheme they actually achieved, so the
@@ -17,6 +17,9 @@ claim "this rhymes" is checked rather than assumed.
 * **Lineation** (``lineate``): one text, no words changed; choose the line
   breaks (at clause punctuation) so line endings fit the scheme. The most
   productive of the three on the full KJV -- see PHASE16_DESIGN.md.
+* **Joint** (``stitch_lineate``): translation per verse and line breaks in
+  one exact DP; with 8 translations it finds 2.8x the content rhymes of the
+  two engines above combined.
 * **Rhyme classes** (``rhyme_classes`` / ``laplacian``): line endings as a
   graph, A_ij = 1 when two endings rhyme, L = D - A. The number of rhyme
   classes is the number of connected components, which equals the nullity of

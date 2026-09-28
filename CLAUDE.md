@@ -116,15 +116,19 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   ABAB are handled, and 8 translations × the whole Bible runs in seconds). `substitute()` swaps only a line's final word
   for a filtered WordNet synonym. `lineate()` changes no words: it re-breaks one
   text into lines at clause punctuation so line endings rhyme (exact DP; the
-  best engine, ~4× stitching's content rhymes). `content_rhymes` /
+  single-text engine, ~4× stitching's content rhymes). `stitch_lineate()` does
+  both at once — translation per verse *and* breaks, one exact DP whose verse
+  starts inside an open line are their own states (so it stays polynomial on
+  short-verse runs); 8 translations give 2.8× the two engines' summed content
+  rhymes. CLI `rhyme.py joint`. `content_rhymes` /
   `content_distance` exclude stopword rhymes (me/thee). `rhyme_classes()` / `laplacian()` give rhyme
   classes as components of the rhyme graph, where nullity(L) = the class count.
   Rhyme = shared CMUDict tail from the last *primary*-stressed vowel, over all
   pronunciations; identical words never rhyme. Needs NLTK `cmudict`,
   `wordnet` and `stopwords`; `test_rhyme.py` skips without them. The measured
   finding: verse-per-line text rhymes on ~0.3% of scheme pairs, and the best
-  engine reaches ~3% (1% on content words), so don't describe its output as
-  "rhyming Bible text".
+  engine (joint, 8 translations) reaches ~3.5% AABB / 5% ABAB, so don't
+  describe its output as "rhyming Bible text".
 - **`scripts/`** — standalone converters that download source texts into
   `data/` (gitignored): `convert_wlc.py` (Hebrew OT from openscriptures/morphhb
   OSIS XML; strips morphhb's `/` morpheme markers), `convert_gnt.py` (Greek NT
