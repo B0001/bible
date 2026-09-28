@@ -35,6 +35,7 @@ substitution): ``python -m nltk.downloader cmudict wordnet stopwords``.
 """
 
 import argparse
+import heapq
 import itertools
 import re
 import sys
@@ -348,6 +349,156 @@ def lineate(
     return [" ".join(tokens[a:b]) for a, b in itertools.pairwise(cuts)], cost
 
 
+# ------------------------------------- joint: translation per verse + breaks
+
+def stitch_lineate(
+    corpora: dict[str, Sequence[str]],
+    scheme: str = "AABB",
+    lo: int = 4,
+    hi: int = 16,
+    alpha: float = 1.0,
+    beta: float = 0.05,
+    gamma: float = 0.0,
+    register_penalties: dict[tuple[str, str], float] | None = None,
+    default_penalty: float = 0.3,
+    distance: Callable[[str, str], float] = phonetic_distance,
+) -> tuple[list[str], list[str], float]:
+    """Choose each verse's translation *and* the line breaks, jointly and exactly.
+
+    The objective is ``lineate``'s (rhyme reward, line-length term) plus
+    ``stitch``'s register penalty between consecutive verses' translations.
+    Every verse appears verbatim in exactly one translation, and a line may run
+    across a verse boundary, so one line can join two translations. Returns
+    ``(lines, translation per verse, cost)``; the cost equals the minimum,
+    over every translation assignment, of that assignment's register penalty
+    plus ``lineate`` on the text it selects (the tests check exactly this).
+
+    DP over line boundaries. A boundary is (verse, translation, tokens of that
+    verse consumed), or a verse start, where the translation is not chosen yet.
+    Its state also carries the previous verse's translation (for the register
+    term), the line index in the strophe, and the end *words* of the open rhyme
+    anchors. From each boundary every legal next line is enumerated, branching
+    over translations at each verse boundary it crosses.
+    """
+    names = list(corpora)
+    n_verses = len(corpora[names[0]])
+    if any(len(v) != n_verses for v in corpora.values()):
+        raise ValueError("corpora must be aligned to the same number of lines")
+    penalties = register_penalties or {}
+    toks = {t: [v.split() for v in corpora[t]] for t in names}
+    choices = [[t for t in names if toks[t][v]] for v in range(n_verses)]
+    k = len(scheme)
+    pairs = scheme_pairs(scheme)
+    target = (lo + hi) / 2
+    keep = {i: tuple(a for a in range(i + 1) if any(p == a and q > i for p, q in pairs))
+            for i in range(k)}
+
+    def breakable(t, v, o):  # may a line end after o tokens of verse v in t?
+        return o == len(toks[t][v]) or bool(CLAUSE_END.search(toks[t][v][o - 1]))
+
+    def norm(v, t, o):
+        """A fully consumed verse is the start of the next non-blank one."""
+        if t is not None and o == len(toks[t][v]):
+            v, t, o = v + 1, None, 0
+        if t is None:
+            while v < n_verses and not choices[v]:
+                v += 1  # blank in every translation: contributes nothing
+        return (v, t, o)
+
+    @cache
+    def lines_from(v, t, o, last):
+        """(end position, words, register cost, end word, pieces) of each legal line."""
+        out = []
+
+        def walk(v, t, o, last, words, reg, pieces, seen_break):
+            if v >= n_verses:
+                return
+            if t is None:
+                if not choices[v]:
+                    walk(v + 1, None, 0, last, words, reg, pieces, seen_break)
+                    return
+                for t2 in choices[v]:
+                    r = gamma * _register(penalties, default_penalty, last, t2) if last else 0.0
+                    walk(v, t2, 0, t2, words, reg + r, pieces, seen_break)
+                return
+            n = len(toks[t][v])
+            for o2 in range(o + 1, n + 1):
+                w = words + o2 - o
+                if not breakable(t, v, o2):
+                    continue
+                if w > hi and seen_break:
+                    return
+                piece = (*pieces, (v, t, o, o2))
+                out.append(((*norm(v, t, o2), t), w, reg,
+                            terminal_word(toks[t][v][o2 - 1]), piece))
+                if w > hi:
+                    return  # the first break past hi ends the line
+                seen_break = True
+            walk(v + 1, None, 0, t, words + n - o, reg, (*pieces, (v, t, o, n)), seen_break)
+
+        # Legality is per branch (seen_break travels with the walk): a long
+        # line is legal for a translation choice that has no earlier break,
+        # exactly as lineate() would judge that choice's text.
+        walk(v, t, o, last, 0, 0.0, (), False)
+        return out
+
+    start = (*norm(0, None, 0), None, 0)
+    best: dict[tuple, float] = {start: 0.0}
+    back: dict[tuple, tuple] = {}
+    # Process boundaries in text order: every line moves strictly forward, and
+    # a verse start sorts before any mid-verse boundary of that verse, so a
+    # state is final when popped.
+    def order_key(st):
+        return (st[0], 0 if st[1] is None else 1, st[2])
+
+    heap = [(order_key(start), 0, start)]
+    tick = 1
+    done: set[tuple] = set()
+    finals = []
+    while heap:
+        _, _, st = heapq.heappop(heap)
+        if st in done:
+            continue
+        done.add(st)
+        v, t, o, last, i, *anchor_words = st
+        if v >= n_verses:
+            finals.append(st)
+            continue
+        held = dict(zip(keep[i - 1] if i else (), anchor_words, strict=True))
+        for (nv, nt, no, nlast), w, reg, end, pieces in lines_from(v, t, o, last):
+            c = best[st] + reg + beta * abs(w - target) / target
+            for a, b in pairs:
+                if b == i:
+                    c += alpha * (distance(held[a], end) - 1)
+            ni = (i + 1) % k
+            held_n = {**held, i: end}
+            nxt = (nv, nt, no, nlast, ni, *((held_n[a] for a in keep[i]) if ni else ()))
+            if nxt not in best or c < best[nxt] - 1e-12:
+                best[nxt] = c
+                back[nxt] = (st, pieces)
+                heapq.heappush(heap, (order_key(nxt), tick, nxt))
+                tick += 1
+    if not finals:
+        return [], [], 0.0
+    final = min(finals, key=best.__getitem__)
+    cost = best[final]
+    lines_pieces = []
+    st = final
+    while st != start:
+        st, pieces = back[st]
+        lines_pieces.append(pieces)
+    lines_pieces.reverse()
+    path: list[str] = [names[0]] * n_verses
+    lines = []
+    for pieces in lines_pieces:
+        words = []
+        for v, t, a, b in pieces:
+            path[v] = t
+            words.extend(toks[t][v][a:b])
+        lines.append(" ".join(words))
+    return lines, path, cost
+
+
 # ------------------------------------------------------- System 2: substitute
 
 # Alternative spellings of the same inflection: "church" + es, "hope" + d.
@@ -554,21 +705,26 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     s1 = sub.add_parser("stitch", help="System 1: pick a translation per verse")
-    s1.add_argument("--bible", action="append", required=True, metavar="NAME=PATH")
-    s1.add_argument("--penalty", action="append", default=[], metavar="A:B=X",
-                    help="register penalty for switching between A and B")
-    s1.add_argument("--default-penalty", type=float, default=0.3)
-    s1.add_argument("--gamma", type=float, default=0.5)
     s2 = sub.add_parser("substitute", help="System 2: synonym swaps in one text")
     s2.add_argument("--bible", required=True)
     s3 = sub.add_parser("lineate", help="re-break one text into rhyming lines, words unchanged")
     s3.add_argument("--bible", required=True)
-    s3.add_argument("--lo", type=int, default=4, help="target minimum words per line")
-    s3.add_argument("--hi", type=int, default=16, help="maximum words per line")
-    for p in (s1, s2, s3):
+    s4 = sub.add_parser("joint", help="translation per verse and line breaks, chosen together")
+    for p in (s1, s4):
+        p.add_argument("--bible", action="append", required=True, metavar="NAME=PATH")
+        p.add_argument("--penalty", action="append", default=[], metavar="A:B=X",
+                       help="register penalty for switching between A and B")
+        p.add_argument("--default-penalty", type=float, default=0.3)
+    s1.add_argument("--gamma", type=float, default=0.5)
+    s4.add_argument("--gamma", type=float, default=0.1,
+                    help="switch penalty weight; >0 stops switches that buy nothing")
+    for p in (s3, s4):
+        p.add_argument("--lo", type=int, default=4, help="target minimum words per line")
+        p.add_argument("--hi", type=int, default=16, help="maximum words per line")
+    for p in (s1, s2, s3, s4):
         p.add_argument("--ref", required=True, help='ref prefix, e.g. "psalms 23:"')
         p.add_argument("--scheme", default="AABB")
-    for p in (s1, s3):
+    for p in (s1, s3, s4):
         p.add_argument("--content", action="store_true",
                        help="optimize for content-word rhymes (no me/thee)")
     args = ap.parse_args(argv)
@@ -588,7 +744,7 @@ def main(argv=None):
             print(line)
         return
 
-    if args.cmd == "stitch":
+    if args.cmd in ("stitch", "joint"):
         passages = {}
         for spec in args.bible:
             name, _, path = spec.partition("=")
@@ -605,6 +761,22 @@ def main(argv=None):
             pair, _, val = spec.partition("=")
             a, _, b = pair.partition(":")
             penalties[(a, b)] = float(val)
+        if args.cmd == "joint":
+            lines, path, cost = stitch_lineate(
+                corpora, args.scheme, args.lo, args.hi, gamma=args.gamma,
+                register_penalties=penalties, default_penalty=args.default_penalty,
+                distance=dist)
+            for n, verses in corpora.items():
+                print(f"# {n}, one verse per line: {_report(verses, args.scheme)}")
+            print(f"# joint: {_report(lines, args.scheme)}")
+            runs = [(t, len(list(g))) for t, g in itertools.groupby(path)]
+            print("# translations in verse order: "
+                  + ", ".join(f"{t}×{n}" for t, n in runs))
+            for n, line in enumerate(lines):
+                if n and n % len(args.scheme) == 0:
+                    print()
+                print(line)
+            return
         path, cost = stitch(corpora, args.scheme, gamma=args.gamma,
                             register_penalties=penalties,
                             default_penalty=args.default_penalty, distance=dist)
