@@ -162,6 +162,16 @@ def content_distance(a: str, b: str) -> float:
     return phonetic_distance(a, b)
 
 
+def exact_distance(a: str, b: str) -> float:
+    """0 for a rhyme, else 1: no partial credit for near-rhymes."""
+    return 0.0 if rhymes(a, b) else 1.0
+
+
+def content_exact_distance(a: str, b: str) -> float:
+    """0 for a content-word rhyme, else 1."""
+    return 0.0 if content_rhymes(a, b) else 1.0
+
+
 def scheme_satisfaction(
     lines: Sequence[str], scheme: str, rhyme_test: Callable[[str, str], bool] = rhymes
 ) -> tuple[int, int]:
@@ -271,6 +281,21 @@ def stitch(
 
 CLAUSE_END = re.compile(r"[,;:.!?][\"')\]]*$")
 
+# Opt-in extra break points: a line may also end just *before* one of these.
+# Coordinating conjunctions plus the subordinators that open most clauses in
+# the English translations measured here.
+CONJUNCTIONS = frozenset(
+    ["and", "but", "for", "or", "nor", "yet", "that", "which", "who", "when", "because"]
+)
+
+
+def break_after(words: Sequence[str], j: int, break_before: frozenset[str] = frozenset()) -> bool:
+    """May a line end after ``words[j]``? Verse end, clause punctuation, or
+    the next word is in ``break_before``."""
+    if j == len(words) - 1 or CLAUSE_END.search(words[j]):
+        return True
+    return bool(break_before) and words[j + 1].lower().strip("\"'(`") in break_before
+
 
 def lineate(
     verses: Sequence[str],
@@ -280,13 +305,15 @@ def lineate(
     alpha: float = 1.0,
     beta: float = 0.05,
     distance: Callable[[str, str], float] = phonetic_distance,
+    break_before: frozenset[str] = frozenset(),
 ) -> tuple[list[str], float]:
     """Re-break a passage into lines so line endings fit ``scheme``; no word changes.
 
     Stitching and substitution both change *which words* are said. This keeps
     one text verbatim -- ``" ".join(lines).split() == " ".join(verses).split()``
     -- and only chooses where lines end. Breaks are allowed after clause
-    punctuation (``, ; : . ! ?``) and at verse ends. Each scheme pair scores
+    punctuation (``, ; : . ! ?``), at verse ends, and before any word in
+    ``break_before`` (e.g. ``CONJUNCTIONS``; empty by default). Each scheme pair scores
     ``alpha * (distance - 1)`` (a rhyme is a reward of ``alpha``, so the
     optimizer is not paid to make fewer, longer lines to dodge pairs); each
     line costs ``beta * |words - target| / target`` with target the midpoint of
@@ -298,12 +325,11 @@ def lineate(
     tokens: list[str] = []
     breaks: set[int] = set()
     for verse in verses:
-        for tok in verse.split():
+        words = verse.split()
+        for j, tok in enumerate(words):
             tokens.append(tok)
-            if CLAUSE_END.search(tok):
+            if break_after(words, j, break_before):
                 breaks.add(len(tokens))
-        if tokens:
-            breaks.add(len(tokens))
     n_tok = len(tokens)
     if not n_tok:
         return [], 0.0
@@ -365,11 +391,13 @@ def stitch_lineate(
     register_penalties: dict[tuple[str, str], float] | None = None,
     default_penalty: float = 0.3,
     distance: Callable[[str, str], float] = phonetic_distance,
+    break_before: frozenset[str] = frozenset(),
 ) -> tuple[list[str], list[str], float]:
     """Choose each verse's translation *and* the line breaks, jointly and exactly.
 
     The objective is ``lineate``'s (rhyme reward, line-length term) plus
-    ``stitch``'s register penalty between consecutive verses' translations.
+    ``stitch``'s register penalty between consecutive verses' translations;
+    ``break_before`` adds break points exactly as in ``lineate``.
     Every verse appears verbatim in exactly one translation, and a line may run
     across a verse boundary, so one line can join two translations. Returns
     ``(lines, translation per verse, cost)``; the cost equals the minimum,
@@ -400,7 +428,7 @@ def stitch_lineate(
             for i in range(k)}
 
     def breakable(t, v, o):  # may a line end after o tokens of verse v in t?
-        return o == len(toks[t][v]) or bool(CLAUSE_END.search(toks[t][v][o - 1]))
+        return break_after(toks[t][v], o - 1, break_before)
 
     def verse_start(v):  # next verse at or after v that is not blank everywhere
         while v < n_verses and not choices[v]:
@@ -709,8 +737,9 @@ def main(argv=None):
                        help="register penalty for switching between A and B")
         p.add_argument("--default-penalty", type=float, default=0.3)
     s1.add_argument("--gamma", type=float, default=0.5)
-    s4.add_argument("--gamma", type=float, default=0.1,
-                    help="switch penalty weight; >0 stops switches that buy nothing")
+    s4.add_argument("--gamma", type=float, default=0.2,
+                    help="switch penalty weight; the default makes a switch cost more "
+                         "than any line-length gain, so only rhymes buy one")
     for p in (s3, s4):
         p.add_argument("--lo", type=int, default=4, help="target minimum words per line")
         p.add_argument("--hi", type=int, default=16, help="maximum words per line")
@@ -720,15 +749,25 @@ def main(argv=None):
     for p in (s1, s3, s4):
         p.add_argument("--content", action="store_true",
                        help="optimize for content-word rhymes (no me/thee)")
+        p.add_argument("--slant", action="store_true",
+                       help="give near-rhymes partial credit (tends to buy them "
+                            "with one-word lines); default scores exact rhymes only")
+    for p in (s3, s4):
+        p.add_argument("--conj", action="store_true",
+                       help="also allow breaks before and/but/for/that/which/...")
     args = ap.parse_args(argv)
-    dist = content_distance if getattr(args, "content", False) else phonetic_distance
+    content, slant = getattr(args, "content", False), getattr(args, "slant", False)
+    dist = {(False, False): exact_distance, (True, False): content_exact_distance,
+            (False, True): phonetic_distance, (True, True): content_distance}[content, slant]
 
     if args.cmd == "lineate":
         rows = load_passage(args.bible, args.ref)
         if not rows:
             sys.exit(f"no verses match {args.ref!r}")
         verses = [v for _, v in rows]
-        lines, _ = lineate(verses, args.scheme, args.lo, args.hi, distance=dist)
+        bb = CONJUNCTIONS if args.conj else frozenset()
+        lines, _ = lineate(verses, args.scheme, args.lo, args.hi, distance=dist,
+                           break_before=bb)
         print(f"# one verse per line: {_report(verses, args.scheme)}")
         print(f"# lineated:           {_report(lines, args.scheme)}")
         for n, line in enumerate(lines):
@@ -758,7 +797,7 @@ def main(argv=None):
             lines, path, cost = stitch_lineate(
                 corpora, args.scheme, args.lo, args.hi, gamma=args.gamma,
                 register_penalties=penalties, default_penalty=args.default_penalty,
-                distance=dist)
+                distance=dist, break_before=CONJUNCTIONS if args.conj else frozenset())
             for n, verses in corpora.items():
                 print(f"# {n}, one verse per line: {_report(verses, args.scheme)}")
             print(f"# joint: {_report(lines, args.scheme)}")

@@ -265,14 +265,16 @@ def test_stitch_scales_linearly():
     assert time.time() - t0 < 10
 
 
-def _lineate_brute(verses, scheme, lo, hi, alpha, beta, distance):
+def _lineate_brute(verses, scheme, lo, hi, alpha, beta, distance, break_before=frozenset()):
+    # Break points computed independently of rhyme.break_after.
     tokens, breaks = [], set()
     for v in verses:
-        for tok in v.split():
+        words = v.split()
+        for j, tok in enumerate(words):
             tokens.append(tok)
-            if rhyme.CLAUSE_END.search(tok):
+            nxt = words[j + 1] if j + 1 < len(words) else None
+            if rhyme.CLAUSE_END.search(tok) or nxt is None or nxt in break_before:
                 breaks.add(len(tokens))
-        breaks.add(len(tokens))
     order = sorted(breaks)
     target = (lo + hi) / 2
     pairs = rhyme.scheme_pairs(scheme)
@@ -298,8 +300,9 @@ def _lineate_brute(verses, scheme, lo, hi, alpha, beta, distance):
     return best
 
 
+@pytest.mark.parametrize("break_before", [frozenset(), frozenset({"wb"})])
 @pytest.mark.parametrize("scheme", ["AABB", "ABAB", "XAXA"])
-def test_lineate_is_exactly_optimal(scheme):
+def test_lineate_is_exactly_optimal(scheme, break_before):
     rng = random.Random(scheme)
     vocab = ["wa", "wb", "wc", "wd"]
     table = {(a, b): rng.random() for a in vocab for b in vocab}
@@ -310,8 +313,9 @@ def test_lineate_is_exactly_optimal(scheme):
     for _ in range(4):
         verses = [" ".join(rng.choice(vocab) + rng.choice(["", "", ","]) for _ in range(6))
                   for _ in range(3)]
-        _, cost = rhyme.lineate(verses, scheme, lo=1, hi=4, distance=distance)
-        want = _lineate_brute(verses, scheme, 1, 4, 1.0, 0.05, distance)
+        _, cost = rhyme.lineate(verses, scheme, lo=1, hi=4, distance=distance,
+                                break_before=break_before)
+        want = _lineate_brute(verses, scheme, 1, 4, 1.0, 0.05, distance, break_before)
         assert cost == pytest.approx(want)
 
 
@@ -329,7 +333,8 @@ def test_lineate_keeps_every_word_and_finds_the_rhyme():
 
 # ------------------------------------------- joint stitch + lineate (round 3)
 
-def _joint_brute(corpora, scheme, gamma, penalties, default, distance):
+def _joint_brute(corpora, scheme, gamma, penalties, default, distance,
+                 break_before=frozenset()):
     names = list(corpora)
     n = len(corpora[names[0]])
     best = float("inf")
@@ -337,13 +342,15 @@ def _joint_brute(corpora, scheme, gamma, penalties, default, distance):
         reg = sum(gamma * rhyme._register(penalties, default, a, b)
                   for a, b in itertools.pairwise(path))
         text = [corpora[t][v] for v, t in enumerate(path)]
-        _, cost = rhyme.lineate(text, scheme, lo=1, hi=4, distance=distance)
+        _, cost = rhyme.lineate(text, scheme, lo=1, hi=4, distance=distance,
+                                break_before=break_before)
         best = min(best, reg + cost)
     return best
 
 
+@pytest.mark.parametrize("break_before", [frozenset(), frozenset({"wb"})])
 @pytest.mark.parametrize("scheme", ["AABB", "ABAB", "XAXA"])
-def test_stitch_lineate_is_exactly_optimal(scheme):
+def test_stitch_lineate_is_exactly_optimal(scheme, break_before):
     # The joint DP must equal: min over every translation assignment of its
     # register penalty + lineate() on the text it selects. Lines may cross
     # verse boundaries, and some verses exceed hi with no clause break.
@@ -363,9 +370,9 @@ def test_stitch_lineate_is_exactly_optimal(scheme):
         penalties = {("x", "y"): rng.random()}
         lines, path, cost = rhyme.stitch_lineate(
             corpora, scheme, lo=1, hi=4, gamma=0.3, register_penalties=penalties,
-            default_penalty=0.2, distance=distance)
+            default_penalty=0.2, distance=distance, break_before=break_before)
         assert cost == pytest.approx(
-            _joint_brute(corpora, scheme, 0.3, penalties, 0.2, distance))
+            _joint_brute(corpora, scheme, 0.3, penalties, 0.2, distance, break_before))
         chosen = [corpora[t][v] for v, t in enumerate(path)]
         assert " ".join(lines).split() == " ".join(chosen).split()
 
@@ -421,3 +428,45 @@ def test_stitch_lineate_short_verses_stay_polynomial():
     lines, _, _ = rhyme.stitch_lineate(corpora, "AABB", distance=lambda a, b: float(a == b))
     assert time.time() - t0 < 30  # ~5 s here; exponential would be hours
     assert len(" ".join(lines).split()) == 120
+
+
+@needs_cmu
+def test_conjunction_breaks_find_rhymes_punctuation_hides():
+    # No punctuation between "night" and "and": only a conjunction break
+    # lets "delight" / "night" end lines.
+    verses = ["the law is his delight and he meditates by day and by night and he is blessed"]
+    plain, _ = rhyme.lineate(verses, "AA", lo=2, hi=8)
+    conj, _ = rhyme.lineate(verses, "AA", lo=2, hi=8, break_before=rhyme.CONJUNCTIONS)
+    assert rhyme.scheme_satisfaction(plain, "AA")[0] == 0  # one unbreakable line
+    assert conj[:2] == ["the law is his delight", "and he meditates by day and by night"]
+    assert " ".join(conj).split() == verses[0].split()
+
+
+def test_break_after_rules():
+    words = ["he", "rose,", "and", "went", "up"]
+    assert rhyme.break_after(words, 1)                       # "rose,"
+    assert not rhyme.break_after(words, 2)                   # "and" -> "went"
+    assert rhyme.break_after(words, 4)                       # verse end
+    assert not rhyme.break_after(words, 0)
+    assert rhyme.break_after(["he", "went", "and", "came"], 1, rhyme.CONJUNCTIONS)
+
+
+@needs_wordnet
+def test_exact_distances_give_no_partial_credit():
+    assert rhyme.exact_distance("name", "flame") == 0.0
+    assert rhyme.exact_distance("soul", "hold") == 1.0  # slant: 1/3 under phonetic_distance
+    assert rhyme.content_exact_distance("me", "thee") == 1.0
+    assert rhyme.content_exact_distance("rams", "lambs") == 0.0
+
+
+@needs_wordnet
+def test_cli_joint_conj(tmp_path, capsys):
+    a = tmp_path / "a.txt"
+    b = tmp_path / "b.txt"
+    a.write_text("The law is his delight and he thinks on it by day and by night. -- psalms 1:2\n")
+    b.write_text("His pleasure is in the law and he muses on it day and night. -- psalms 1:2\n")
+    rhyme.main(["joint", "--bible", f"a={a}", "--bible", f"b={b}", "--ref", "psalms",
+                "--scheme", "AA", "--content", "--conj", "--lo", "2", "--hi", "10"])
+    out = capsys.readouterr().out
+    assert "# joint: 1/1 scheme pairs rhyme (1 on content words)" in out
+    assert "The law is his delight\n" in out
