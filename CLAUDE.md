@@ -111,9 +111,9 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   "nothing marked read" rather than taking the reader down.
 - **`rhyme.py`** — rhymed composites, separate from grading (Phase 16, see
   `PHASE16_DESIGN.md`). `stitch()` picks one translation per verse to fit a
-  rhyme scheme plus a register-switch penalty (exact: a Viterbi pass across
-  strophes, with every assignment enumerated inside a strophe — so non-adjacent
-  schemes like ABAB are handled). `substitute()` swaps only a line's final word
+  rhyme scheme plus a register-switch penalty (exact line-level DP whose state
+  carries the translations of open rhyme anchors — so non-adjacent schemes like
+  ABAB are handled, and 8 translations × the whole Bible runs in seconds). `substitute()` swaps only a line's final word
   for a filtered WordNet synonym. `lineate()` changes no words: it re-breaks one
   text into lines at clause punctuation so line endings rhyme (exact DP; the
   best engine, ~4× stitching's content rhymes). `content_rhymes` /
