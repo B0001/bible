@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rhymed Bible text: two engines and a rhyme-class graph.
+"""Rhymed Bible text: three engines and a rhyme-class graph.
 
 Neither engine produces a translation. Both produce a *rhymed composite* and
 report how much of the requested rhyme scheme they actually achieved, so the
@@ -14,6 +14,9 @@ claim "this rhymes" is checked rather than assumed.
   strophe is optimal for any scheme, not just adjacent-pair ones.
 * **Substitution** (System 2, ``substitute``): one baseline text; only the
   line-final word changes, to a WordNet synonym that rhymes with its partner.
+* **Lineation** (``lineate``): one text, no words changed; choose the line
+  breaks (at clause punctuation) so line endings fit the scheme. The most
+  productive of the three on the full KJV -- see PHASE16_DESIGN.md.
 * **Rhyme classes** (``rhyme_classes`` / ``laplacian``): line endings as a
   graph, A_ij = 1 when two endings rhyme, L = D - A. The number of rhyme
   classes is the number of connected components, which equals the nullity of
@@ -76,8 +79,16 @@ def _tail(phones: Sequence[str]) -> tuple[str, ...]:
 
 @cache
 def rhyme_tails(word: str) -> frozenset[tuple[str, ...]]:
-    """Every rhyme tail of ``word`` over its CMUDict pronunciations."""
-    return frozenset(_tail(p) for p in pronunciations(word))
+    """Every rhyme tail of ``word`` over its CMUDict pronunciations.
+
+    Pronunciations with no primary stress are ignored when the word has one
+    that does: those are reduced function-word forms ("them" as DH AH0 M),
+    and their unstressed vowel made "come"/"them" the second most common
+    rhyme in the lineated KJV.
+    """
+    prons = pronunciations(word)
+    stressed = [p for p in prons if any(ph.endswith("1") for ph in p)]
+    return frozenset(_tail(p) for p in (stressed or prons))
 
 
 def rhymes(a: str, b: str) -> bool:
@@ -133,8 +144,27 @@ def scheme_pairs(scheme: str) -> list[tuple[int, int]]:
     return pairs
 
 
-def scheme_satisfaction(lines: Sequence[str], scheme: str) -> tuple[int, int]:
-    """(rhyming pairs, required pairs) of ``lines`` under a repeating ``scheme``."""
+def content_rhymes(a: str, b: str) -> bool:
+    """A rhyme between two non-stopwords: "sword"/"lord", not "me"/"thee"."""
+    stop = _stopwords() | ARCHAIC_STOPWORDS
+    return a.lower() not in stop and b.lower() not in stop and rhymes(a, b)
+
+
+def content_distance(a: str, b: str) -> float:
+    """``phonetic_distance`` with stopword endings scored as no rhyme (1)."""
+    stop = _stopwords() | ARCHAIC_STOPWORDS
+    if a.lower() in stop or b.lower() in stop:
+        return 1.0
+    return phonetic_distance(a, b)
+
+
+def scheme_satisfaction(
+    lines: Sequence[str], scheme: str, rhyme_test: Callable[[str, str], bool] = rhymes
+) -> tuple[int, int]:
+    """(rhyming pairs, required pairs) of ``lines`` under a repeating ``scheme``.
+
+    Pass ``rhyme_test=content_rhymes`` to count only content-word rhymes.
+    """
     k = len(scheme)
     pairs = scheme_pairs(scheme)
     hit = total = 0
@@ -143,7 +173,7 @@ def scheme_satisfaction(lines: Sequence[str], scheme: str) -> tuple[int, int]:
         for i, j in pairs:
             if j < len(block):
                 total += 1
-                hit += rhymes(terminal_word(block[i]), terminal_word(block[j]))
+                hit += rhyme_test(terminal_word(block[i]), terminal_word(block[j]))
     return hit, total
 
 
@@ -185,30 +215,150 @@ def stitch(
     def reg(a, b):
         return _register(penalties, default_penalty, a, b)
 
-    # best[t] = (cost, path) over complete strophes, last line rendered by t.
-    best: dict[str | None, tuple[float, list[str]]] = {None: (0.0, [])}
-    for start in range(0, n_lines, k):
+    # Line-level DP. After line i of a strophe the state is the translation of
+    # line i plus the translations of earlier lines some later line of the
+    # strophe must rhyme with ("open anchors"): N states for AABB, N^2 for
+    # ABAB. Exact, and linear in the number of lines -- enumerating N^k
+    # assignments per strophe stopped scaling at N = 8.
+    def open_after(i, size):
+        return tuple(a for a in range(i + 1) if any(p == a and i < q < size for p, q in pairs))
+
+    State = tuple  # (translation of this line, *translations of open anchors)
+    layer: dict[State, float] = {}
+    back: list[dict[State, tuple[State | None, str]]] = []
+    for line in range(n_lines):
+        start, i = divmod(line, k)
+        start *= k
         size = min(k, n_lines - start)
-        inner = [(i, j) for i, j in pairs if j < size]
-        nxt: dict[str | None, tuple[float, list[str]]] = {}
-        for combo in itertools.product(names, repeat=size):
-            local = sum(
-                alpha * distance(ends[combo[i]][start + i], ends[combo[j]][start + j])
-                for i, j in inner
-            ) + sum(gamma * reg(combo[i], combo[i + 1]) for i in range(size - 1))
-            for prev, (cost, path) in best.items():
-                total = cost + local + (gamma * reg(prev, combo[0]) if prev else 0.0)
-                if combo[-1] not in nxt or total < nxt[combo[-1]][0] - 1e-12:
-                    nxt[combo[-1]] = (total, path + list(combo))
-        best = nxt
-    cost, path = min(best.values(), key=lambda cp: cp[0])
-    return path, cost
+        choices = [t for t in names if corpora[t][line].strip()] or names
+        anchors_now = open_after(i, size)
+        prev_open = open_after(i - 1, size) if i else ()
+        nxt: dict[State, float] = {}
+        ptr: dict[State, tuple[State | None, str]] = {}
+        for prev, cost in (layer.items() if line else [((), 0.0)]):
+            held = dict(zip(prev_open, prev[1:], strict=True)) if i else {}
+            if i:
+                held[i - 1] = prev[0]
+            for t in choices:
+                c = cost
+                if line:
+                    c += gamma * reg(prev[0], t)
+                for a, b in pairs:
+                    if b == i and b < size:
+                        c += alpha * distance(ends[held[a]][start + a], ends[t][line])
+                held_t = {**held, i: t}
+                state = (t, *(held_t[a] for a in anchors_now))
+                if state not in nxt or c < nxt[state] - 1e-12:
+                    nxt[state] = c
+                    ptr[state] = (prev if line else None, t)
+        layer = nxt
+        back.append(ptr)
+    state = min(layer, key=layer.__getitem__)
+    cost = layer[state]
+    path = []
+    for ptr in reversed(back):
+        prev, t = ptr[state]
+        path.append(t)
+        state = prev
+    return path[::-1], cost
+
+
+# ------------------------------------------------------ lineation (words fixed)
+
+CLAUSE_END = re.compile(r"[,;:.!?][\"')\]]*$")
+
+
+def lineate(
+    verses: Sequence[str],
+    scheme: str = "AABB",
+    lo: int = 4,
+    hi: int = 16,
+    alpha: float = 1.0,
+    beta: float = 0.05,
+    distance: Callable[[str, str], float] = phonetic_distance,
+) -> tuple[list[str], float]:
+    """Re-break a passage into lines so line endings fit ``scheme``; no word changes.
+
+    Stitching and substitution both change *which words* are said. This keeps
+    one text verbatim -- ``" ".join(lines).split() == " ".join(verses).split()``
+    -- and only chooses where lines end. Breaks are allowed after clause
+    punctuation (``, ; : . ! ?``) and at verse ends. Each scheme pair scores
+    ``alpha * (distance - 1)`` (a rhyme is a reward of ``alpha``, so the
+    optimizer is not paid to make fewer, longer lines to dodge pairs); each
+    line costs ``beta * |words - target| / target`` with target the midpoint of
+    ``lo..hi``. A line may exceed ``hi`` only when no clause break comes sooner.
+
+    Exact DP over (words consumed, line index in strophe, end positions of the
+    strophe's open rhyme anchors). Returns the lines and the minimal cost.
+    """
+    tokens: list[str] = []
+    breaks: set[int] = set()
+    for verse in verses:
+        for tok in verse.split():
+            tokens.append(tok)
+            if CLAUSE_END.search(tok):
+                breaks.add(len(tokens))
+        if tokens:
+            breaks.add(len(tokens))
+    n_tok = len(tokens)
+    if not n_tok:
+        return [], 0.0
+    ends = [terminal_word(t) for t in tokens]
+    order = sorted(breaks)
+    k = len(scheme)
+    pairs = scheme_pairs(scheme)
+    target = (lo + hi) / 2
+    keep = {i: tuple(a for a in range(i + 1) if any(p == a and q > i for p, q in pairs))
+            for i in range(k)}
+
+    State = tuple  # (tokens consumed, next line index, *end token of each open anchor)
+    start: State = (0, 0)
+    best: dict[State, float] = {start: 0.0}
+    back: dict[State, State] = {}
+    # States only move forward in tokens, so process them in token order.
+    frontier = {0: [start]}
+    for p in [0, *order[:-1]]:
+        for state in frontier.pop(p, []):
+            cost = best[state]
+            i = state[1]
+            held = dict(zip(keep[i - 1] if i else (), state[2:], strict=True))
+            cands = [q for q in order if p < q <= p + hi] or [min(q for q in order if q > p)]
+            for q in cands:
+                c = cost + beta * abs((q - p) - target) / target
+                end = q - 1
+                for a, b in pairs:
+                    if b == i:
+                        c += alpha * (distance(ends[held[a]], ends[end]) - 1)
+                held_q = {**held, i: end}
+                ni = (i + 1) % k
+                nxt = (q, ni, *((held_q[a] for a in keep[i]) if ni else ()))
+                if nxt not in best or c < best[nxt] - 1e-12:
+                    if nxt not in best:
+                        frontier.setdefault(q, []).append(nxt)
+                    best[nxt] = c
+                    back[nxt] = state
+    final = min((s for s in best if s[0] == n_tok), key=best.__getitem__)
+    cost = best[final]
+    cuts = []
+    s = final
+    while s != start:
+        cuts.append(s[0])
+        s = back[s]
+    cuts = [0, *reversed(cuts)]
+    return [" ".join(tokens[a:b]) for a, b in itertools.pairwise(cuts)], cost
 
 
 # ------------------------------------------------------- System 2: substitute
 
 # Alternative spellings of the same inflection: "church" + es, "hope" + d.
 _SUFFIX_CLASS = {"s": ("s", "es"), "es": ("es", "s"), "d": ("d", "ed"), "ed": ("ed", "d")}
+
+
+# Early Modern English function words NLTK's modern list lacks. Almost half
+# of the lineated KJV's rhymes were thee/me/ye/be pairs.
+ARCHAIC_STOPWORDS = frozenset(
+    ["thee", "thou", "thy", "thine", "ye", "hath", "doth", "art", "shalt", "wilt", "hast", "dost", "unto", "yea"]
+)
 
 
 @lru_cache(maxsize=1)
@@ -396,7 +546,8 @@ def load_passage(path: str, ref_prefix: str) -> list[tuple[str, str]]:
 
 def _report(lines, scheme):
     hit, total = scheme_satisfaction(lines, scheme)
-    return f"{hit}/{total} scheme pairs rhyme"
+    content, _ = scheme_satisfaction(lines, scheme, content_rhymes)
+    return f"{hit}/{total} scheme pairs rhyme ({content} on content words)"
 
 
 def main(argv=None):
@@ -410,10 +561,32 @@ def main(argv=None):
     s1.add_argument("--gamma", type=float, default=0.5)
     s2 = sub.add_parser("substitute", help="System 2: synonym swaps in one text")
     s2.add_argument("--bible", required=True)
-    for p in (s1, s2):
+    s3 = sub.add_parser("lineate", help="re-break one text into rhyming lines, words unchanged")
+    s3.add_argument("--bible", required=True)
+    s3.add_argument("--lo", type=int, default=4, help="target minimum words per line")
+    s3.add_argument("--hi", type=int, default=16, help="maximum words per line")
+    for p in (s1, s2, s3):
         p.add_argument("--ref", required=True, help='ref prefix, e.g. "psalms 23:"')
         p.add_argument("--scheme", default="AABB")
+    for p in (s1, s3):
+        p.add_argument("--content", action="store_true",
+                       help="optimize for content-word rhymes (no me/thee)")
     args = ap.parse_args(argv)
+    dist = content_distance if getattr(args, "content", False) else phonetic_distance
+
+    if args.cmd == "lineate":
+        rows = load_passage(args.bible, args.ref)
+        if not rows:
+            sys.exit(f"no verses match {args.ref!r}")
+        verses = [v for _, v in rows]
+        lines, _ = lineate(verses, args.scheme, args.lo, args.hi, distance=dist)
+        print(f"# one verse per line: {_report(verses, args.scheme)}")
+        print(f"# lineated:           {_report(lines, args.scheme)}")
+        for n, line in enumerate(lines):
+            if n and n % len(args.scheme) == 0:
+                print()
+            print(line)
+        return
 
     if args.cmd == "stitch":
         passages = {}
@@ -434,7 +607,7 @@ def main(argv=None):
             penalties[(a, b)] = float(val)
         path, cost = stitch(corpora, args.scheme, gamma=args.gamma,
                             register_penalties=penalties,
-                            default_penalty=args.default_penalty)
+                            default_penalty=args.default_penalty, distance=dist)
         for n, lines in corpora.items():
             print(f"# {n} alone: {_report(lines, args.scheme)}")
         chosen = [corpora[t][i] for i, t in enumerate(path)]

@@ -114,13 +114,17 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   rhyme scheme plus a register-switch penalty (exact: a Viterbi pass across
   strophes, with every assignment enumerated inside a strophe — so non-adjacent
   schemes like ABAB are handled). `substitute()` swaps only a line's final word
-  for a filtered WordNet synonym. `rhyme_classes()` / `laplacian()` give rhyme
+  for a filtered WordNet synonym. `lineate()` changes no words: it re-breaks one
+  text into lines at clause punctuation so line endings rhyme (exact DP; the
+  best engine, ~4× stitching's content rhymes). `content_rhymes` /
+  `content_distance` exclude stopword rhymes (me/thee). `rhyme_classes()` / `laplacian()` give rhyme
   classes as components of the rhyme graph, where nullity(L) = the class count.
   Rhyme = shared CMUDict tail from the last *primary*-stressed vowel, over all
   pronunciations; identical words never rhyme. Needs NLTK `cmudict`,
   `wordnet` and `stopwords`; `test_rhyme.py` skips without them. The measured
-  finding: the translations rhyme on ~0.3% of scheme pairs and neither engine
-  gets past ~0.6%, so don't describe its output as "rhyming Bible text".
+  finding: verse-per-line text rhymes on ~0.3% of scheme pairs, and the best
+  engine reaches ~3% (1% on content words), so don't describe its output as
+  "rhyming Bible text".
 - **`scripts/`** — standalone converters that download source texts into
   `data/` (gitignored): `convert_wlc.py` (Hebrew OT from openscriptures/morphhb
   OSIS XML; strips morphhb's `/` morpheme markers), `convert_gnt.py` (Greek NT

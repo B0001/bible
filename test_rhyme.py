@@ -229,3 +229,99 @@ def test_cli_stitch_and_substitute(tmp_path, capsys):
     assert "[b] He keeps me through the night. -- psalms 1:2" in out
     rhyme.main(["substitute", "--bible", str(a), "--ref", "psalms", "--scheme", "AA"])
     assert "# before: 0/1" in capsys.readouterr().out
+
+
+# ---------------------------------------------------- round 2: lineate etc.
+
+@needs_cmu
+def test_reduced_pronunciations_do_not_rhyme():
+    # "them" has a reduced DH AH0 M form; its unstressed vowel made "come"/
+    # "them" the second-commonest rhyme in the lineated KJV.
+    assert not rhyme.rhymes("come", "them")
+    assert rhyme.rhymes("them", "hem")
+
+
+@needs_wordnet
+def test_content_rhymes_exclude_function_words():
+    assert rhyme.rhymes("me", "thee") and not rhyme.content_rhymes("me", "thee")
+    assert rhyme.content_rhymes("rams", "lambs")
+    assert rhyme.content_distance("me", "thee") == 1.0
+
+
+def test_stitch_skips_blank_renderings():
+    corpora = {"a": ["", "x y"], "b": ["some words", "x z"]}
+    path, _ = rhyme.stitch(corpora, "AA", distance=lambda a, b: 0.0)
+    assert path[0] == "b"
+
+
+def test_stitch_scales_linearly():
+    # 8 translations x 400 lines under ABAB must finish fast; the per-strophe
+    # enumeration it replaced was N^k per strophe.
+    import time
+
+    corpora = {f"t{n}": [f"line {'abcdefgh'[(n + i) % 8]}" for i in range(400)] for n in range(8)}
+    t0 = time.time()
+    rhyme.stitch(corpora, "ABAB", distance=lambda a, b: float(a != b))
+    assert time.time() - t0 < 10
+
+
+def _lineate_brute(verses, scheme, lo, hi, alpha, beta, distance):
+    tokens, breaks = [], set()
+    for v in verses:
+        for tok in v.split():
+            tokens.append(tok)
+            if rhyme.CLAUSE_END.search(tok):
+                breaks.add(len(tokens))
+        breaks.add(len(tokens))
+    order = sorted(breaks)
+    target = (lo + hi) / 2
+    pairs = rhyme.scheme_pairs(scheme)
+    best = float("inf")
+
+    def walk(p, cuts):
+        nonlocal best
+        if p == len(tokens):
+            ends = [rhyme.terminal_word(tokens[q - 1]) for q in cuts]
+            lens = [b - a for a, b in itertools.pairwise([0, *cuts])]
+            cost = sum(beta * abs(n - target) / target for n in lens)
+            for s in range(0, len(cuts), len(scheme)):
+                for i, j in pairs:
+                    if s + j < len(cuts):
+                        cost += alpha * (distance(ends[s + i], ends[s + j]) - 1)
+            best = min(best, cost)
+            return
+        cands = [q for q in order if p < q <= p + hi] or [min(q for q in order if q > p)]
+        for q in cands:
+            walk(q, [*cuts, q])
+
+    walk(0, [])
+    return best
+
+
+@pytest.mark.parametrize("scheme", ["AABB", "ABAB", "XAXA"])
+def test_lineate_is_exactly_optimal(scheme):
+    rng = random.Random(scheme)
+    vocab = ["wa", "wb", "wc", "wd"]
+    table = {(a, b): rng.random() for a in vocab for b in vocab}
+
+    def distance(a, b):
+        return table[(a, b)]
+
+    for _ in range(4):
+        verses = [" ".join(rng.choice(vocab) + rng.choice(["", "", ","]) for _ in range(6))
+                  for _ in range(3)]
+        _, cost = rhyme.lineate(verses, scheme, lo=1, hi=4, distance=distance)
+        want = _lineate_brute(verses, scheme, 1, 4, 1.0, 0.05, distance)
+        assert cost == pytest.approx(want)
+
+
+@needs_cmu
+def test_lineate_keeps_every_word_and_finds_the_rhyme():
+    verses = [
+        "The mountains skipped like rams, and the little hills like lambs.",
+        "What ailed thee, O thou sea, that thou fleddest?",
+    ]
+    lines, _ = rhyme.lineate(verses, "AA", lo=2, hi=8)
+    assert " ".join(lines).split() == " ".join(verses).split()
+    assert lines[:2] == ["The mountains skipped like rams,", "and the little hills like lambs."]
+    assert rhyme.scheme_satisfaction(verses, "AA") == (0, 1)
