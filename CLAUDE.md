@@ -109,6 +109,18 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   multiple replicas and SQLite on a shared volume permits only one writer; see
   `k8s/README.md`. Every backend fault is caught and logged, degrading to
   "nothing marked read" rather than taking the reader down.
+- **`rhyme.py`** — rhymed composites, separate from grading (Phase 16, see
+  `PHASE16_DESIGN.md`). `stitch()` picks one translation per verse to fit a
+  rhyme scheme plus a register-switch penalty (exact: a Viterbi pass across
+  strophes, with every assignment enumerated inside a strophe — so non-adjacent
+  schemes like ABAB are handled). `substitute()` swaps only a line's final word
+  for a filtered WordNet synonym. `rhyme_classes()` / `laplacian()` give rhyme
+  classes as components of the rhyme graph, where nullity(L) = the class count.
+  Rhyme = shared CMUDict tail from the last *primary*-stressed vowel, over all
+  pronunciations; identical words never rhyme. Needs NLTK `cmudict`,
+  `wordnet` and `stopwords`; `test_rhyme.py` skips without them. The measured
+  finding: the translations rhyme on ~0.3% of scheme pairs and neither engine
+  gets past ~0.6%, so don't describe its output as "rhyming Bible text".
 - **`scripts/`** — standalone converters that download source texts into
   `data/` (gitignored): `convert_wlc.py` (Hebrew OT from openscriptures/morphhb
   OSIS XML; strips morphhb's `/` morpheme markers), `convert_gnt.py` (Greek NT
