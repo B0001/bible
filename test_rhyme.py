@@ -325,3 +325,86 @@ def test_lineate_keeps_every_word_and_finds_the_rhyme():
     assert " ".join(lines).split() == " ".join(verses).split()
     assert lines[:2] == ["The mountains skipped like rams,", "and the little hills like lambs."]
     assert rhyme.scheme_satisfaction(verses, "AA") == (0, 1)
+
+
+# ------------------------------------------- joint stitch + lineate (round 3)
+
+def _joint_brute(corpora, scheme, gamma, penalties, default, distance):
+    names = list(corpora)
+    n = len(corpora[names[0]])
+    best = float("inf")
+    for path in itertools.product(names, repeat=n):
+        reg = sum(gamma * rhyme._register(penalties, default, a, b)
+                  for a, b in itertools.pairwise(path))
+        text = [corpora[t][v] for v, t in enumerate(path)]
+        _, cost = rhyme.lineate(text, scheme, lo=1, hi=4, distance=distance)
+        best = min(best, reg + cost)
+    return best
+
+
+@pytest.mark.parametrize("scheme", ["AABB", "ABAB", "XAXA"])
+def test_stitch_lineate_is_exactly_optimal(scheme):
+    # The joint DP must equal: min over every translation assignment of its
+    # register penalty + lineate() on the text it selects. Lines may cross
+    # verse boundaries, and some verses exceed hi with no clause break.
+    rng = random.Random("joint" + scheme)
+    vocab = ["wa", "wb", "wc", "wd"]
+    table = {(a, b): rng.random() for a in vocab for b in vocab}
+
+    def distance(a, b):
+        return table[(a, b)]
+
+    for _ in range(3):
+        corpora = {
+            t: [" ".join(rng.choice(vocab) + rng.choice(["", "", "", ","])
+                         for _ in range(rng.randint(1, 6))) for _ in range(4)]
+            for t in "xyz"
+        }
+        penalties = {("x", "y"): rng.random()}
+        lines, path, cost = rhyme.stitch_lineate(
+            corpora, scheme, lo=1, hi=4, gamma=0.3, register_penalties=penalties,
+            default_penalty=0.2, distance=distance)
+        assert cost == pytest.approx(
+            _joint_brute(corpora, scheme, 0.3, penalties, 0.2, distance))
+        chosen = [corpora[t][v] for v, t in enumerate(path)]
+        assert " ".join(lines).split() == " ".join(chosen).split()
+
+
+def test_stitch_lineate_with_one_translation_is_lineate():
+    rng = random.Random(7)
+    vocab = ["wa", "wb", "wc"]
+
+    def distance(a, b):
+        return float(a == b)
+
+    verses = [" ".join(rng.choice(vocab) + rng.choice(["", ","]) for _ in range(5))
+              for _ in range(6)]
+    lines, path, cost = rhyme.stitch_lineate({"only": verses}, "ABAB", lo=1, hi=4,
+                                             distance=distance)
+    want_lines, want_cost = rhyme.lineate(verses, "ABAB", lo=1, hi=4, distance=distance)
+    assert cost == pytest.approx(want_cost)
+    assert " ".join(lines).split() == " ".join(want_lines).split()
+    assert set(path) == {"only"}
+
+
+def test_stitch_lineate_skips_blank_verses():
+    corpora = {"a": ["x y,", "", "z w."], "b": ["x q,", "", "z v."]}
+    lines, _, _ = rhyme.stitch_lineate(corpora, "AA", lo=1, hi=4,
+                                          distance=lambda a, b: 0.0)
+    assert " ".join(lines).split()[0] == "x"
+    assert len(" ".join(lines).split()) == 4
+
+
+@needs_cmu
+def test_stitch_lineate_beats_either_alone():
+    corpora = {
+        "a": ["The mountains skipped like rams, and the little hills rejoiced.",
+              "What ails you, O sea, that you flee?"],
+        "b": ["The hills leapt like rams, and the little hills like lambs.",
+              "What ailed thee, O thou sea, that thou fleddest?"],
+    }
+    lines, path, cost = rhyme.stitch_lineate(corpora, "AABB", lo=2, hi=10)
+    for t in corpora:
+        assert cost <= rhyme.lineate(corpora[t], "AABB", lo=2, hi=10)[1] + 1e-9
+    assert rhyme.scheme_satisfaction(lines, "AABB") == (2, 2)
+    assert path == ["b", "a"]
