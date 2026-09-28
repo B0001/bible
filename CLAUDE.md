@@ -120,17 +120,25 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   both at once — translation per verse *and* breaks, one exact DP whose verse
   starts inside an open line are their own states (so it stays polynomial on
   short-verse runs); 8 translations give 2.8× the two engines' summed content
-  rhymes. CLI `rhyme.py joint`. `content_rhymes` /
+  rhymes. CLI `rhyme.py joint`. `break_before=CONJUNCTIONS` (CLI `--conj`,
+  off by default) also allows breaks before and/but/for/that/which/…, worth
+  +27–75%. The CLI scores exact rhymes by default (`--slant` for graded
+  credit, which buys near-rhymes with one-word lines). Extra public-domain
+  texts come from `scripts/convert_scrollmapper.py` (refs aligned to the
+  tushortz files; `--` becomes an em dash because YLT's dashes collided with
+  the ` -- ` separator). `content_rhymes` /
   `content_distance` exclude stopword rhymes (me/thee). `rhyme_classes()` / `laplacian()` give rhyme
   classes as components of the rhyme graph, where nullity(L) = the class count.
   Rhyme = shared CMUDict tail from the last *primary*-stressed vowel, over all
   pronunciations; identical words never rhyme. Needs NLTK `cmudict`,
   `wordnet` and `stopwords`; `test_rhyme.py` skips without them. The measured
   finding: verse-per-line text rhymes on ~0.3% of scheme pairs, and the best
-  engine (joint, 8 translations) reaches ~3.5% AABB / 5% ABAB, so don't
-  describe its output as "rhyming Bible text".
+  engine (joint, 8 translations, `--conj`) reaches ~4.7% AABB / 7% ABAB,
+  some of it on very short lines, so don't describe its output as "rhyming
+  Bible text".
 - **`scripts/`** — standalone converters that download source texts into
-  `data/` (gitignored): `convert_wlc.py` (Hebrew OT from openscriptures/morphhb
+  `data/` (gitignored): `convert_scrollmapper.py` (public-domain English:
+  ASV/BBE/Darby/KJV/Webster/YLT), `convert_wlc.py` (Hebrew OT from openscriptures/morphhb
   OSIS XML; strips morphhb's `/` morpheme markers), `convert_gnt.py` (Greek NT
   from byztxt CSV files), `convert_delitzsch_nt.py` (Hebrew NT from
   HebrewNewTestament/HebDelitzsch OSIS).

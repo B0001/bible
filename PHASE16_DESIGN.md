@@ -188,11 +188,56 @@ The CLI's `joint` defaults to `--gamma 0.1`. At γ = 0 translations switch on
 arbitrary ties, and a small penalty keeps a verse's switch for when it buys a
 rhyme or a better line length. The table above uses γ = 0, the upper bound.
 
-Reproducing: the five scrollmapper texts were written to `data/<name>.txt`
-(gitignored) in `verse -- ref` form, with refs copied positionally from the
-tushortz KJV after asserting chapter:verse agree for all 31,102 rows.
+Reproducing: `python scripts/convert_scrollmapper.py --translation YLT`
+(likewise ASV, BBE, Darby, Webster) writes `data/<name>.txt` with refs that
+match the tushortz texts verse for verse. It maps the 66 books by position,
+guarded by book-count, book-order and verse-count checks, and it refuses
+Tyndale (mostly empty) and DRC (78-book canon). It also converts `--` to an
+em dash. YLT writes dashes as `--`, and 135 of its verses end in " --",
+which fused with the ` -- ` separator and corrupted their refs. The
+hand-built `data/ylt.txt` used in round 3's CLI example had that bug. The
+round-3 tables read the CSVs directly and are unaffected.
 
-Not done: breaks at conjunctions ("and", "for") as well as punctuation.
+## Round 4: conjunction breaks, and exact scoring in the CLI
+
+`break_before` (the CLI's `--conj`) lets a line also end just *before* a
+word in `CONJUNCTIONS`: and, but, for, or, nor, yet, that, which, who, when,
+because. It's off by default, so every earlier number is unchanged. The
+brute-force optimality tests for both `lineate` and `stitch_lineate` now
+run with and without it, and their break points are computed independently
+of `rhyme.break_after`.
+
+Full Bible, content-only exact cost, content-word rhymes:
+
+| engine | AABB | AABB +conj | ABAB | ABAB +conj |
+|---|---|---|---|---|
+| lineate KJV | 366 | 465 | 427 | 630 |
+| lineate BBE | 318 | 496 | 395 | 691 |
+| **joint, 8 translations** | 1260 | **1736 (4.66%)** | 1826 | **2589 (6.97%)** |
+
+Conjunction breaks add 27–75% more rhymes. They help most where punctuation
+is sparse (BBE's Basic English, +56% and +75%). The run took 5.4 min for
+AABB and 15 min for ABAB; Nehemiah 10 is still the slowest chapter (11 s,
+ABAB).
+
+**Short lines.** `lo` is only a length target, so a one-word line costs
+0.045, far less than a rhyme is worth. On Psalms + Proverbs + Isaiah with
+exact scoring, 9% of the joint's rhymes involve a line under 4 words (14%
+with `--conj`). Almost every such short line is there to win a rhyme (15 of
+15 short lines, 31 of 31), so the counts above include them. Read them as
+"rhymes at line ends, some on very short lines", not as stanza-quality verse.
+
+**CLI defaults changed after reading real output.** With graded distance
+(partial credit for near-rhymes), the optimizer bought near-rhymes with
+one-word lines. Isaiah 55 came out as "wine / and milk", "A leader / and
+commander". So `lineate`, `joint` and `stitch` now score exact rhymes
+(`exact_distance` / `content_exact_distance`), and `--slant` restores
+graded credit. `joint`'s default γ went from 0.1 to 0.2. At 0.1 a switch
+cost less than a line-length improvement, so Ecclesiastes 3 switched
+translation 15 times for no rhyme. At 0.2 it stays in one text, and
+Psalm 114 stays in NASB with 3 rhymes (sea/flee, and rams/lambs twice). The
+library functions keep their defaults (`phonetic_distance`, γ = 0), which
+all the tables use.
 
 ## Rhyme classes and the Laplacian
 
