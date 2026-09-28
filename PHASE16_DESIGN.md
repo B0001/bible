@@ -30,7 +30,9 @@ Also: a line's final word is the last alphabetic token (so `sake.` and
 
 ## Measurements (full Bible, KJV / AKJV / NASB from `tushortz/variety-bible-text`)
 
-Scheme pairs that rhyme (31,102 verses, one verse = one line):
+Scheme pairs that rhyme (31,102 verses, one verse = one line). These are
+round-1 numbers; the round-2 pronunciation fix below moves them by a pair or
+two (KJV AABB 56 → 55). The round-2 tables are current.
 
 | scheme | KJV | AKJV | NASB | stitch γ=0.5 | stitch γ=0 | substitute (KJV) |
 |---|---|---|---|---|---|---|
@@ -68,6 +70,76 @@ spec's language-model perplexity gate is the `accept=` hook. It isn't
 implemented because no LM dependency is present, so this precision is
 unvalidated and nothing here should be read as a claim that substitutions are
 faithful.
+
+## Round 2: more translations, and lineation
+
+### Stitching improves with N, then levels off
+
+Six more public-domain texts come from `scrollmapper/bible_databases` (ASV,
+BBE, Darby, YLT, Webster, KJV), aligned to the tushortz NASB/AKJV by
+(book order, chapter, verse). Full Bible, AABB, γ = 0, translations added in
+the order shown:
+
+| N | 1 KJV | 2 +NASB | 3 +BBE | 4 +YLT | 5 +Darby | 6 +ASV | 7 +Webster | 8 +AKJV |
+|---|---|---|---|---|---|---|---|---|
+| rhyming pairs | 55 | 87 | 138 | 176 | 182 | 190 | 193 | 194 |
+
+The gains come from *dissimilar* translations (BBE's Basic English, YLT's
+literalism). KJV-family texts (ASV, Webster, AKJV) add almost nothing,
+because they end verses with the same words, and a repeated word is not a
+rhyme. Eight translations reach 1.25%.
+
+The per-strophe N^k enumeration from round 1 was too slow for this. `stitch`
+is now a line-level DP whose state is the current line's translation plus
+the translations of lines a later line must rhyme with: N states for AABB,
+N² for ABAB. It's still exact (same brute-force tests), and the full
+8-translation Bible runs in seconds. Blank renderings (ASV/BBE have 16 empty
+verses) are never chosen.
+
+### Lineation: change no words, choose the line breaks
+
+`lineate()` keeps one text verbatim and chooses where lines end, allowed
+after clause punctuation and at verse ends. It's an exact DP over
+(tokens consumed, line in strophe, end positions of open rhyme anchors). A
+rhyme is a *reward* (`alpha * (distance − 1)`), so the optimizer isn't paid
+to make fewer, longer lines to dodge pairs. A small length term keeps lines
+near 4–16 words. Tested: the words are preserved exactly, and the DP matches
+brute-force enumeration of every valid lineation.
+
+Full KJV, strophes restarting each chapter. "content" counts only rhymes
+between non-stopwords (NLTK list plus thee/thou/ye/unto/yea…):
+
+| engine | AABB all | AABB content | ABAB all | ABAB content |
+|---|---|---|---|---|
+| one verse per line | 46 (0.30%) | 14 | 41 (0.27%) | 14 |
+| stitch, 8 translations | 189 (1.24%) | 87 | 167 (1.12%) | 73 |
+| substitute (KJV) | 86 (0.56%) | 39 | 73 (0.49%) | 36 |
+| **lineate (KJV)** | **904 (2.50%)** | 362 | **1117 (3.09%)** | 421 |
+| lineate, content-only cost | 430 | **366 (1.01%)** | 501 | **427 (1.19%)** |
+
+**Finding:** re-breaking the lines of *one unaltered translation* gives 4–5×
+more content rhymes than stitching eight translations, and 9× more than
+synonym substitution. It also changes nothing a reader could call
+unfaithful. The rates are still low: this doesn't make the Bible rhyme; it
+finds the rhymes the Bible already has (Psalm 114's "skipped like rams, /
+and the little hills like lambs" — twice). Percentages across rows aren't
+strictly comparable, because lineation produces more lines and so more
+pairs. The raw counts are.
+
+Before the content filter, 42% of lineated KJV rhymes were me/thee/ye/be
+pairs. Those are legitimate in hymnody, but they're why "content" is
+reported separately. The second most common rhyme was "come/them", an
+artifact: CMUDict's reduced "them" (DH AH0 M) supplied an unstressed tail.
+`rhyme_tails` now ignores a word's pronunciations that lack a primary stress
+whenever it has one that doesn't.
+
+```bash
+python rhyme.py lineate --bible data/kjv.txt --ref "psalms 114:" --content
+```
+
+Next steps not taken: lineation over *stitched* choices (translation per
+verse and breaks jointly — the product of both gains, at the cost of a larger
+state); breaks at conjunctions ("and", "for") as well as punctuation.
 
 ## Rhyme classes and the Laplacian
 
