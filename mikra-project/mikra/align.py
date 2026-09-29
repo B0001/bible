@@ -17,7 +17,7 @@ def _audio_duration(path: Path) -> float | None:
         from mutagen.mp3 import MP3
 
         return float(MP3(str(path)).info.length)
-    except Exception:
+    except (OSError, AttributeError, ValueError):
         return None
 
 
@@ -107,7 +107,7 @@ def run(
     for chap_id, entry in targets.items():
         try:
             status = align_chapter(root, chap_id, entry, model, keep_niqqud, model_name)
-        except Exception as exc:  # keep the batch going; record the failure
+        except (OSError, ValueError, RuntimeError, AttributeError, TypeError) as exc:  # keep the batch going; record the failure
             entry["align_error"] = repr(exc)
             status = "align_failed"
         entry["status"] = status
