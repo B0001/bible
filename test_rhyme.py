@@ -265,7 +265,8 @@ def test_stitch_scales_linearly():
     assert time.time() - t0 < 10
 
 
-def _lineate_brute(verses, scheme, lo, hi, alpha, beta, distance, break_before=frozenset()):
+def _lineate_brute(verses, scheme, lo, hi, alpha, beta, distance, break_before=frozenset(),
+                   min_words=1):
     # Break points computed independently of rhyme.break_after.
     tokens, breaks = [], set()
     for v in verses:
@@ -292,7 +293,12 @@ def _lineate_brute(verses, scheme, lo, hi, alpha, beta, distance, break_before=f
                         cost += alpha * (distance(ends[s + i], ends[s + j]) - 1)
             best = min(best, cost)
             return
-        cands = [q for q in order if p < q <= p + hi] or [min(q for q in order if q > p)]
+        n = len(tokens)
+        if n - p < min_words:
+            cands = [n]
+        else:
+            cands = [q for q in order if min_words <= q - p <= hi] or \
+                [min(q for q in order if q - p >= min_words)]
         for q in cands:
             walk(q, [*cuts, q])
 
@@ -300,9 +306,10 @@ def _lineate_brute(verses, scheme, lo, hi, alpha, beta, distance, break_before=f
     return best
 
 
+@pytest.mark.parametrize("min_words", [1, 3])
 @pytest.mark.parametrize("break_before", [frozenset(), frozenset({"wb"})])
 @pytest.mark.parametrize("scheme", ["AABB", "ABAB", "XAXA"])
-def test_lineate_is_exactly_optimal(scheme, break_before):
+def test_lineate_is_exactly_optimal(scheme, break_before, min_words):
     rng = random.Random(scheme)
     vocab = ["wa", "wb", "wc", "wd"]
     table = {(a, b): rng.random() for a in vocab for b in vocab}
@@ -313,10 +320,12 @@ def test_lineate_is_exactly_optimal(scheme, break_before):
     for _ in range(4):
         verses = [" ".join(rng.choice(vocab) + rng.choice(["", "", ","]) for _ in range(6))
                   for _ in range(3)]
-        _, cost = rhyme.lineate(verses, scheme, lo=1, hi=4, distance=distance,
-                                break_before=break_before)
-        want = _lineate_brute(verses, scheme, 1, 4, 1.0, 0.05, distance, break_before)
+        lines, cost = rhyme.lineate(verses, scheme, lo=1, hi=4, distance=distance,
+                                    break_before=break_before, min_words=min_words)
+        want = _lineate_brute(verses, scheme, 1, 4, 1.0, 0.05, distance, break_before,
+                              min_words)
         assert cost == pytest.approx(want)
+        assert all(len(line.split()) >= min_words for line in lines[:-1])
 
 
 @needs_cmu
@@ -334,7 +343,7 @@ def test_lineate_keeps_every_word_and_finds_the_rhyme():
 # ------------------------------------------- joint stitch + lineate (round 3)
 
 def _joint_brute(corpora, scheme, gamma, penalties, default, distance,
-                 break_before=frozenset()):
+                 break_before=frozenset(), min_words=1):
     names = list(corpora)
     n = len(corpora[names[0]])
     best = float("inf")
@@ -343,14 +352,15 @@ def _joint_brute(corpora, scheme, gamma, penalties, default, distance,
                   for a, b in itertools.pairwise(path))
         text = [corpora[t][v] for v, t in enumerate(path)]
         _, cost = rhyme.lineate(text, scheme, lo=1, hi=4, distance=distance,
-                                break_before=break_before)
+                                break_before=break_before, min_words=min_words)
         best = min(best, reg + cost)
     return best
 
 
+@pytest.mark.parametrize("min_words", [1, 3])
 @pytest.mark.parametrize("break_before", [frozenset(), frozenset({"wb"})])
 @pytest.mark.parametrize("scheme", ["AABB", "ABAB", "XAXA"])
-def test_stitch_lineate_is_exactly_optimal(scheme, break_before):
+def test_stitch_lineate_is_exactly_optimal(scheme, break_before, min_words):
     # The joint DP must equal: min over every translation assignment of its
     # register penalty + lineate() on the text it selects. Lines may cross
     # verse boundaries, and some verses exceed hi with no clause break.
@@ -370,9 +380,11 @@ def test_stitch_lineate_is_exactly_optimal(scheme, break_before):
         penalties = {("x", "y"): rng.random()}
         lines, path, cost = rhyme.stitch_lineate(
             corpora, scheme, lo=1, hi=4, gamma=0.3, register_penalties=penalties,
-            default_penalty=0.2, distance=distance, break_before=break_before)
-        assert cost == pytest.approx(
-            _joint_brute(corpora, scheme, 0.3, penalties, 0.2, distance, break_before))
+            default_penalty=0.2, distance=distance, break_before=break_before,
+            min_words=min_words)
+        assert cost == pytest.approx(_joint_brute(corpora, scheme, 0.3, penalties, 0.2,
+                                                  distance, break_before, min_words))
+        assert all(len(line.split()) >= min_words for line in lines[:-1])
         chosen = [corpora[t][v] for v, t in enumerate(path)]
         assert " ".join(lines).split() == " ".join(chosen).split()
 
@@ -470,3 +482,10 @@ def test_cli_joint_conj(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "# joint: 1/1 scheme pairs rhyme (1 on content words)" in out
     assert "The law is his delight\n" in out
+
+
+def test_min_words_must_fit_under_hi():
+    with pytest.raises(ValueError):
+        rhyme.lineate(["a b c"], min_words=5, hi=4)
+    with pytest.raises(ValueError):
+        rhyme.stitch_lineate({"a": ["a b c"]}, min_words=0)
