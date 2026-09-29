@@ -122,7 +122,8 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   short-verse runs); 8 translations give 2.8× the two engines' summed content
   rhymes. CLI `rhyme.py joint`. `break_before=CONJUNCTIONS` (CLI `--conj`,
   off by default) also allows breaks before and/but/for/that/which/…, worth
-  +27–75%. The CLI scores exact rhymes by default (`--slant` for graded
+  +27–75%. `min_words` (CLI `--min-words`, default 1) is a hard floor on
+  line length, final line exempt; at 4, 84–89% of rhymes survive. The CLI scores exact rhymes by default (`--slant` for graded
   credit, which buys near-rhymes with one-word lines). Extra public-domain
   texts come from `scripts/convert_scrollmapper.py` (refs aligned to the
   tushortz files; `--` becomes an em dash because YLT's dashes collided with
@@ -134,8 +135,8 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   `wordnet` and `stopwords`; `test_rhyme.py` skips without them. The measured
   finding: verse-per-line text rhymes on ~0.3% of scheme pairs, and the best
   engine (joint, 8 translations, `--conj`) reaches ~4.7% AABB / 7% ABAB,
-  some of it on very short lines, so don't describe its output as "rhyming
-  Bible text".
+  or 4.1% / 6.2% with every line ≥ 4 words, so don't describe its output as
+  "rhyming Bible text".
 - **`scripts/`** — standalone converters that download source texts into
   `data/` (gitignored): `convert_scrollmapper.py` (public-domain English:
   ASV/BBE/Darby/KJV/Webster/YLT), `convert_wlc.py` (Hebrew OT from openscriptures/morphhb

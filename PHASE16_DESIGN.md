@@ -239,6 +239,31 @@ Psalm 114 stays in NASB with 3 rhymes (sea/flee, and rams/lambs twice). The
 library functions keep their defaults (`phonetic_distance`, γ = 0), which
 all the tables use.
 
+## Round 5: a hard floor on line length
+
+Round 4 found that 9–14% of rhymes involve a line under 4 words. `min_words`
+(CLI `--min-words`, default 1 = no floor) makes a break fewer than
+`min_words` words into a line illegal, except at the end of the text. It
+applies to `lineate` and `stitch_lineate` alike. The brute-force optimality
+tests run with floors of 1 and 3 and check that no line except the last is
+shorter.
+
+Full Bible, 8 translations, `--conj`, content-only exact cost:
+
+| content-word rhymes | no floor | `min_words=4` | kept |
+|---|---|---|---|
+| joint, AABB | 1736 | **1538 (4.14%)** | 89% |
+| joint, ABAB | 2589 | **2298 (6.23%)** | 89% |
+| lineate KJV, AABB | 465 | 408 | 88% |
+| lineate KJV, ABAB | 630 | 527 | 84% |
+
+**Finding:** the short lines weren't carrying the result. With every line
+at least 4 words, 84–89% of the rhymes survive, which matches round 4's
+9–14% estimate. The few lines still under 4 words (3–5 across the
+Bible) are chapter endings, which are exempt. `--min-words 4` is the
+setting to use for output meant to be read. Psalm 114 (KJV, AABB) then comes
+out as two clean rams/lambs couplets.
+
 ## Rhyme classes and the Laplacian
 
 `rhyme_classes(words)` builds the graph of line endings (A_ij = 1 when two
