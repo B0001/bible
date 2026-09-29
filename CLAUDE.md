@@ -109,8 +109,37 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   multiple replicas and SQLite on a shared volume permits only one writer; see
   `k8s/README.md`. Every backend fault is caught and logged, degrading to
   "nothing marked read" rather than taking the reader down.
+- **`rhyme.py`** — rhymed composites, separate from grading (Phase 16, see
+  `PHASE16_DESIGN.md`). `stitch()` picks one translation per verse to fit a
+  rhyme scheme plus a register-switch penalty (exact line-level DP whose state
+  carries the translations of open rhyme anchors — so non-adjacent schemes like
+  ABAB are handled, and 8 translations × the whole Bible runs in seconds). `substitute()` swaps only a line's final word
+  for a filtered WordNet synonym. `lineate()` changes no words: it re-breaks one
+  text into lines at clause punctuation so line endings rhyme (exact DP; the
+  single-text engine, ~4× stitching's content rhymes). `stitch_lineate()` does
+  both at once — translation per verse *and* breaks, one exact DP whose verse
+  starts inside an open line are their own states (so it stays polynomial on
+  short-verse runs); 8 translations give 2.8× the two engines' summed content
+  rhymes. CLI `rhyme.py joint`. `break_before=CONJUNCTIONS` (CLI `--conj`,
+  off by default) also allows breaks before and/but/for/that/which/…, worth
+  +27–75%. `min_words` (CLI `--min-words`, default 1) is a hard floor on
+  line length, final line exempt; at 4, 84–89% of rhymes survive. The CLI scores exact rhymes by default (`--slant` for graded
+  credit, which buys near-rhymes with one-word lines). Extra public-domain
+  texts come from `scripts/convert_scrollmapper.py` (refs aligned to the
+  tushortz files; `--` becomes an em dash because YLT's dashes collided with
+  the ` -- ` separator). `content_rhymes` /
+  `content_distance` exclude stopword rhymes (me/thee). `rhyme_classes()` / `laplacian()` give rhyme
+  classes as components of the rhyme graph, where nullity(L) = the class count.
+  Rhyme = shared CMUDict tail from the last *primary*-stressed vowel, over all
+  pronunciations; identical words never rhyme. Needs NLTK `cmudict`,
+  `wordnet` and `stopwords`; `test_rhyme.py` skips without them. The measured
+  finding: verse-per-line text rhymes on ~0.3% of scheme pairs, and the best
+  engine (joint, 8 translations, `--conj`) reaches ~4.7% AABB / 7% ABAB,
+  or 4.1% / 6.2% with every line ≥ 4 words, so don't describe its output as
+  "rhyming Bible text".
 - **`scripts/`** — standalone converters that download source texts into
-  `data/` (gitignored): `convert_wlc.py` (Hebrew OT from openscriptures/morphhb
+  `data/` (gitignored): `convert_scrollmapper.py` (public-domain English:
+  ASV/BBE/Darby/KJV/Webster/YLT), `convert_wlc.py` (Hebrew OT from openscriptures/morphhb
   OSIS XML; strips morphhb's `/` morpheme markers), `convert_gnt.py` (Greek NT
   from byztxt CSV files), `convert_delitzsch_nt.py` (Hebrew NT from
   HebrewNewTestament/HebDelitzsch OSIS).
