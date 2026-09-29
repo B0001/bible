@@ -306,6 +306,7 @@ def lineate(
     beta: float = 0.05,
     distance: Callable[[str, str], float] = phonetic_distance,
     break_before: frozenset[str] = frozenset(),
+    min_words: int = 1,
 ) -> tuple[list[str], float]:
     """Re-break a passage into lines so line endings fit ``scheme``; no word changes.
 
@@ -317,11 +318,16 @@ def lineate(
     ``alpha * (distance - 1)`` (a rhyme is a reward of ``alpha``, so the
     optimizer is not paid to make fewer, longer lines to dodge pairs); each
     line costs ``beta * |words - target| / target`` with target the midpoint of
-    ``lo..hi``. A line may exceed ``hi`` only when no clause break comes sooner.
+    ``lo..hi``. ``min_words`` is a hard floor (default 1, i.e. none): a break
+    fewer than ``min_words`` words into a line is not a legal end, except at
+    the end of the text. A line may exceed ``hi`` only when no legal break
+    comes sooner.
 
     Exact DP over (words consumed, line index in strophe, end positions of the
     strophe's open rhyme anchors). Returns the lines and the minimal cost.
     """
+    if not 1 <= min_words <= hi:
+        raise ValueError(f"need 1 <= min_words <= hi, got {min_words}, {hi}")
     tokens: list[str] = []
     breaks: set[int] = set()
     for verse in verses:
@@ -352,7 +358,11 @@ def lineate(
             cost = best[state]
             i = state[1]
             held = dict(zip(keep[i - 1] if i else (), state[2:], strict=True))
-            cands = [q for q in order if p < q <= p + hi] or [min(q for q in order if q > p)]
+            if n_tok - p < min_words:
+                cands = [n_tok]  # the text's last line may be short
+            else:
+                cands = [q for q in order if p + min_words <= q <= p + hi] or \
+                    [min(q for q in order if q >= p + min_words)]
             for q in cands:
                 c = cost + beta * abs((q - p) - target) / target
                 end = q - 1
@@ -392,12 +402,13 @@ def stitch_lineate(
     default_penalty: float = 0.3,
     distance: Callable[[str, str], float] = phonetic_distance,
     break_before: frozenset[str] = frozenset(),
+    min_words: int = 1,
 ) -> tuple[list[str], list[str], float]:
     """Choose each verse's translation *and* the line breaks, jointly and exactly.
 
     The objective is ``lineate``'s (rhyme reward, line-length term) plus
     ``stitch``'s register penalty between consecutive verses' translations;
-    ``break_before`` adds break points exactly as in ``lineate``.
+    ``break_before`` and ``min_words`` act exactly as in ``lineate``.
     Every verse appears verbatim in exactly one translation, and a line may run
     across a verse boundary, so one line can join two translations. Returns
     ``(lines, translation per verse, cost)``; the cost equals the minimum,
@@ -414,6 +425,8 @@ def stitch_lineate(
     instead branches N ways at every verse a line crosses, and that was
     exponential on runs of short verses: 1 Chronicles 1, 8 translations, 8 s.
     """
+    if not 1 <= min_words <= hi:
+        raise ValueError(f"need 1 <= min_words <= hi, got {min_words}, {hi}")
     names = list(corpora)
     n_verses = len(corpora[names[0]])
     if any(len(v) != n_verses for v in corpora.values()):
@@ -477,6 +490,8 @@ def stitch_lineate(
                 if not breakable(tt, v, o2):
                     continue
                 w = w0 + o2 - o
+                if w < min_words and not (o2 == n and verse_start(v + 1) >= n_verses):
+                    continue  # too short to end here (unless the text ends)
                 if w > hi and seen:
                     break
                 end = terminal_word(toks[tt][v][o2 - 1])
@@ -493,11 +508,11 @@ def stitch_lineate(
                     break  # the first break past hi must end the line
                 seen = True
             else:
-                # Verse exhausted without the line having to end (its end is
-                # a break at <= hi words): the line may also run on.
+                # Verse exhausted without the line having to end: the line may
+                # also run on. ``seen`` says whether it passed a legal break.
                 nv = verse_start(v + 1)
                 if nv < n_verses:
-                    relax(st, (nv, None, 0, tt, w0 + n - o, True, i, *anchor_words), base,
+                    relax(st, (nv, None, 0, tt, w0 + n - o, seen, i, *anchor_words), base,
                           (v, tt, o, n, False))
     if not finals:
         return [], [], 0.0
@@ -741,6 +756,8 @@ def main(argv=None):
                     help="switch penalty weight; the default makes a switch cost more "
                          "than any line-length gain, so only rhymes buy one")
     for p in (s3, s4):
+        p.add_argument("--min-words", type=int, default=1,
+                       help="hard floor on words per line (the last line is exempt)")
         p.add_argument("--lo", type=int, default=4, help="target minimum words per line")
         p.add_argument("--hi", type=int, default=16, help="maximum words per line")
     for p in (s1, s2, s3, s4):
@@ -767,7 +784,7 @@ def main(argv=None):
         verses = [v for _, v in rows]
         bb = CONJUNCTIONS if args.conj else frozenset()
         lines, _ = lineate(verses, args.scheme, args.lo, args.hi, distance=dist,
-                           break_before=bb)
+                           break_before=bb, min_words=args.min_words)
         print(f"# one verse per line: {_report(verses, args.scheme)}")
         print(f"# lineated:           {_report(lines, args.scheme)}")
         for n, line in enumerate(lines):
@@ -797,7 +814,8 @@ def main(argv=None):
             lines, path, cost = stitch_lineate(
                 corpora, args.scheme, args.lo, args.hi, gamma=args.gamma,
                 register_penalties=penalties, default_penalty=args.default_penalty,
-                distance=dist, break_before=CONJUNCTIONS if args.conj else frozenset())
+                distance=dist, break_before=CONJUNCTIONS if args.conj else frozenset(),
+                min_words=args.min_words)
             for n, verses in corpora.items():
                 print(f"# {n}, one verse per line: {_report(verses, args.scheme)}")
             print(f"# joint: {_report(lines, args.scheme)}")
