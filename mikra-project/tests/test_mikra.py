@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from mikra import books, hebrew, manifest, rename, validate  # noqa: E402
+from mikra import books, hebrew, manifest, rename, validate
 
 GEN_1_1 = "בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ׃"
 
@@ -18,7 +18,7 @@ def test_tokenize_and_normalize():
     bare = hebrew.normalize(toks[0]["display"])
     assert bare == "בראשית"  # normalized has no cantillation/niqqud
     with_niqqud = hebrew.normalize(toks[0]["display"], keep_niqqud=True)
-    assert "\u05b0" <= min(c for c in with_niqqud if c > "\u05af")  # points survive
+    assert min(c for c in with_niqqud if c > "\u05af") >= "\u05b0"  # points survive
 
 
 def test_maqqef_stays_one_token():
