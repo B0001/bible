@@ -147,11 +147,14 @@ Static, dependency-free HTML/CSS/JS served from the root by `mikra serve`
 
 ## 9. Resolved / Open Questions
 
-- **Text edition (critical):** the `HMT` in `HBRHMTN1DA` indicates a *Modern
-  Hebrew* translation recording. The files in `text/` must be the same edition
-  the narrator reads, or alignment quality collapses. Verify with one chapter
-  before batch-running. (Aligning WLC Biblical Hebrew against a Modern Hebrew
-  narration will fail validation loudly, which is the intended behavior.)
+- **Text edition — resolved: WLC (Masoretic Biblical Hebrew).** Despite the
+  `HMT` in `HBRHMTN1DA`, the narration is *not* a Modern Hebrew translation.
+  Bible Dash's edition gate (`../PHASE10_DESIGN.md` s2, 2026-07-02) matched
+  Whisper output word-for-word against WLC on 1 Chr 1, and the full aligned
+  corpus (737 chapters, 19,310 verses in `../out/audio/wlc/`) scores median
+  verse confidence 0.80, 86% of verses >= 0.5. Use WLC text (`../data/wlc.txt`)
+  split one verse per line. Expect modern plene spelling in ASR output vs WLC's
+  defective spelling; compare with matres lectionis stripped.
 - **Verse boundaries:** derived from the text files — one verse per line.
 - **GPU:** `--device cuda` supported; CPU works but expect ~real-time or slower
   with `large-v3`. Use `--model medium` for iteration.

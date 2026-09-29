@@ -3,6 +3,13 @@
 Word-synchronized "karaoke" reader for narrated Hebrew Bible audio.
 Pipeline + player, desktop only. Full design in [SPEC.md](SPEC.md).
 
+> **Frozen at `mikra-v0.2` (2026-09-29).** It works and is done: 9 tests pass,
+> and the pipeline stages are idempotent. The last open question, which text edition
+> to use, is settled as WLC (see step 4 below). No further development is planned.
+> Audio-synced reading continues in Bible Dash (`../PHASE10_DESIGN.md`), which
+> aligns the same recording against WLC across 737 chapters. Bug fixes only; for
+> anything more, start there.
+
 ## Quickstart
 
 ```bash
@@ -16,7 +23,8 @@ python -m mikra scaffold
 
 # 4. Put matching Hebrew text into ~/Downloads/bible/text/
 #    One file per chapter (Gen_01.txt), ONE VERSE PER LINE.
-#    ⚠ Must be the SAME edition the narrator reads (HMT = Modern Hebrew).
+#    ⚠ Must be WLC (Masoretic): the narration is Biblical Hebrew, not Modern.
+#      See ../PHASE10_DESIGN.md s2; ../data/wlc.txt is the source.
 
 # 5. Run the pipeline
 python -m mikra rename
