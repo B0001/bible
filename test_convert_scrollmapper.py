@@ -37,6 +37,12 @@ def test_dash_becomes_em_dash_so_refs_survive():
     assert out[0][1] == "and lived to the age, —"
 
 
+def test_glued_god_is_split():
+    # scrollmapper's Darby: "the Spirit ofGod was hovering", 3,439 times.
+    out = convert_rows(_rows(text="the Spirit ofGod, theGodhead; God said"))
+    assert out[0][1] == "the Spirit of God, the Godhead; God said"
+
+
 @pytest.mark.parametrize("kwargs, message", [
     ({"n_books": 78}, "expected 66 books"),            # DRC: Catholic canon
     ({"first": "Tobit"}, "book order"),

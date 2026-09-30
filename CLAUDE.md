@@ -120,18 +120,47 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   both at once — translation per verse *and* breaks, one exact DP whose verse
   starts inside an open line are their own states (so it stays polynomial on
   short-verse runs); 8 translations give 2.8× the two engines' summed content
-  rhymes. CLI `rhyme.py joint`. `break_before=CONJUNCTIONS` (CLI `--conj`,
+  rhymes. CLI `rhyme.py joint`. It also takes several equal-length schemes
+  (`scheme=["AABB", "ABAB"]`, CLI `--scheme AABB,ABAB`) and picks one per
+  strophe inside the same DP (state carries the strophe's scheme);
+  `block_hits()` / `scheme_satisfaction()` score each strophe under its best
+  scheme. Full Bible, 7 translations, `--conj --content --g2p`: 8.9% of pairs
+  mixed vs 5.2% AABB / 7.7% ABAB, runs of ≥2 consecutive rhyming pairs 235 vs
+  86 / 191, at ~5× the runtime (18 min, sharing the CPU with a second run).
+  `run_bonus` (CLI `--run-bonus X --run-cap N`) rewards *consecutive*
+  rhymes: a rhyming pair after r rhyming pairs earns an extra
+  `X·min(r, N)`; the state carries the capped run, so it stays exact, and at
+  0 it is not tracked. Measured: with one scheme it changes nothing at any
+  weight (1 Chronicles / Psalms / Genesis, bonus up to 10 — rhymable words
+  sit where they sit); with AABB,ABAB it raises adjacent rhyming pairs
+  14→19 (Psalms) and 18→21 (1 Chronicles) at no loss of rhymes, bonus 1 =
+  bonus 3, and never lengthens the longest run. Full Bible, mixed, bonus 1:
+  adjacent rhyming pairs 266→323, runs of ≥2 pairs 235→287, rhymes
+  3,304→3,303, longest run still 6 (1 Chronicles 24). `repair_gaps()` (CLI `joint --repair 1|2`) is a post-pass that
+  swaps a broken pair's first word, second word, or both for WordNet
+  synonyms when its neighbouring pairs rhyme, to lengthen runs. Measured on
+  the full joint AABB output: 0 of 161 bridge gaps and 8 run ends fixed —
+  64 gaps have no synonym on either side, and loosening `synonyms()`'s
+  filters buys garbage (nails→aces, shekels→bread), so the synonym supply,
+  not the swap direction, is the ceiling. `break_before=CONJUNCTIONS` (CLI `--conj`,
   off by default) also allows breaks before and/but/for/that/which/…, worth
   +27–75%. `min_words` (CLI `--min-words`, default 1) is a hard floor on
   line length, final line exempt; at 4, 84–89% of rhymes survive. The CLI scores exact rhymes by default (`--slant` for graded
   credit, which buys near-rhymes with one-word lines). Extra public-domain
   texts come from `scripts/convert_scrollmapper.py` (refs aligned to the
   tushortz files; `--` becomes an em dash because YLT's dashes collided with
-  the ` -- ` separator). `content_rhymes` /
+  the ` -- ` separator; Darby's source glues every "God" to the preceding
+  word, "ofGod", which the converter splits). `content_rhymes` /
   `content_distance` exclude stopword rhymes (me/thee). `rhyme_classes()` / `laplacian()` give rhyme
   classes as components of the rhyme graph, where nullity(L) = the class count.
   Rhyme = shared CMUDict tail from the last *primary*-stressed vowel, over all
-  pronunciations; identical words never rhyme. Needs NLTK `cmudict`,
+  pronunciations; identical words never rhyme. A word missing from CMUDict
+  never rhymes (7.4% of full-Bible joint line endings, mostly names) unless
+  `guess_unknown()` / CLI `--g2p` is on, which guesses via g2p_en
+  (`pip install '.[g2p]'`, opt-in; `pronunciations()` stays CMUDict-only
+  because `synonyms()` uses it as a word check). `joint --table PATH` writes
+  `line_table()`: one CSV row per line with refs, translations, end word,
+  pronunciation source (cmudict/g2p/none) and rhyme tails. Needs NLTK `cmudict`,
   `wordnet` and `stopwords`; `test_rhyme.py` skips without them. The measured
   finding: verse-per-line text rhymes on ~0.3% of scheme pairs, and the best
   engine (joint, 8 translations, `--conj`) reaches ~4.7% AABB / 7% ABAB,
