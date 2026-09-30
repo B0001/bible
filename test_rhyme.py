@@ -429,6 +429,94 @@ def test_stitch_lineate_beats_either_alone():
     assert path == ["b", "a"]
 
 
+@needs_cmu
+def test_stitch_lineate_picks_scheme_per_strophe():
+    # Strophe 1 rhymes only as AABB, strophe 2 only as ABAB; a fixed scheme
+    # gets half of each, choosing per strophe gets all four pairs.
+    verses = ["a cat.", "a hat.", "a dog.", "a log.",
+              "the sun.", "the day.", "the fun.", "the way."]
+    both = ["AABB", "ABAB"]
+    for sc in both:
+        lines, _, _ = rhyme.stitch_lineate({"t": verses}, sc, lo=1, hi=2)
+        assert rhyme.scheme_satisfaction(lines, sc) == (2, 4)
+    lines, _, _ = rhyme.stitch_lineate({"t": verses}, both, lo=1, hi=2)
+    assert lines == [v[:-1] + "." for v in verses]
+    assert rhyme.scheme_satisfaction(lines, both) == (4, 4)
+    assert rhyme.block_hits(lines, both) == [[True, True], [True, True]]
+    with pytest.raises(ValueError):
+        rhyme.stitch_lineate({"t": verses}, ["AABB", "ABA"])
+
+
+@needs_cmu
+def test_run_bonus_prefers_consecutive_rhymes():
+    # "a" rhymes on pairs 1, 3, 5 (three, scattered); "b" on pairs 1, 2 (two,
+    # in a row). Switching translations is priced out, so it is one or the
+    # other: more rhymes without the bonus, the run with it.
+    a = ["a cat.", "a hat.", "a dog.", "a pen.", "a sun.", "a fun.",
+         "a cup.", "a tree.", "a bell.", "a well."]
+    b = ["the rain.", "the plain.", "the sky.", "the eye.", "the ox.",
+         "the lamp.", "the rope.", "the chair.", "the fork.", "the desk."]
+    kw = {"lo": 1, "hi": 2, "gamma": 1000.0}
+    _, path, _ = rhyme.stitch_lineate({"a": a, "b": b}, "AABB", **kw)
+    assert set(path) == {"a"}
+    _, path, cost = rhyme.stitch_lineate({"a": a, "b": b}, "AABB", run_bonus=2.0, **kw)
+    assert set(path) == {"b"}
+    # the bonus is exactly run_bonus * (run length so far) on the second rhyme
+    base = rhyme.stitch_lineate({"b": b}, "AABB", lo=1, hi=2)[2]
+    assert cost == pytest.approx(base - 2.0)
+
+
+@needs_wordnet
+def test_repair_gaps_swaps_either_word_to_bridge_runs():
+    def text(first, gap):  # a rhyming couplet, the gap couplet, a rhyming couplet
+        return [*first, *gap, "a dog", "a log"]
+
+    rhymed, lone = ["a cat", "a hat"], ["a cow", "a pig"]
+    # First word swapped (earth -> ground, rhymes with found) ...
+    lines, edits = rhyme.repair_gaps(text(rhymed, ["on the earth", "what they found"]))
+    assert edits == [(2, "earth", "ground")] and lines[2] == "on the ground"
+    # ... or the second, whichever order the lines come in.
+    lines, edits = rhyme.repair_gaps(text(rhymed, ["what they found", "on the earth"]))
+    assert edits == [(3, "earth", "ground")]
+    # need=2: a gap with only one rhyming neighbour is left alone; need=1 fixes it.
+    one_sided = text(lone, ["on the earth", "what they found"])
+    assert rhyme.repair_gaps(one_sided)[1] == []
+    assert rhyme.repair_gaps(one_sided, need=1)[1] == [(2, "earth", "ground")]
+    # An accept gate that rejects every candidate blocks the swap.
+    assert rhyme.repair_gaps(text(rhymed, ["on the earth", "what they found"]),
+                             accept=lambda line: False)[1] == []
+
+
+@needs_cmu
+def test_line_table_maps_lines_back_to_verses():
+    corpora = {
+        "a": ["The mountains skipped like rams, and the little hills rejoiced.",
+              "What ails you, O sea, that you flee?"],
+        "b": ["The hills leapt like rams, and the little hills like lambs.",
+              "What ailed thee, O thou sea, that thou fleddest?"],
+    }
+    lines, path, _ = rhyme.stitch_lineate(corpora, "AABB", lo=2, hi=10)
+    rows = rhyme.line_table(lines, path, corpora, ["ps 114:4", "ps 114:5"])
+    assert [r["text"] for r in rows] == lines
+    assert rows[0]["ref_start"] == "ps 114:4" and rows[-1]["ref_end"] == "ps 114:5"
+    assert rows[0]["translations"] == "b"
+    assert rows[0]["end_word"] == "rams" and rows[0]["source"] == "cmudict"
+    assert rows[0]["tails"] == "AE M Z"
+
+
+@needs_cmu
+def test_guess_unknown_makes_names_rhymable():
+    pytest.importorskip("g2p_en")
+    assert not rhyme.rhymes("shechem", "requiem")  # Shechem is not in CMUDict
+    rhyme.guess_unknown()
+    try:
+        assert rhyme.guessed("shechem") and rhyme.rhyme_tails("shechem")
+        assert rhyme.guessed("lord") == []  # CMUDict words are never guessed
+    finally:
+        rhyme.guess_unknown(False)
+    assert rhyme.rhyme_tails("shechem") == frozenset()
+
+
 def test_stitch_lineate_short_verses_stay_polynomial():
     # Runs of very short verses let one line cross many verse boundaries;
     # enumerating whole lines branched N ways per crossing (1 Chronicles 1

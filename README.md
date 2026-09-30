@@ -167,6 +167,50 @@ python parser.py ... --semantic
 Review history is stored in `<vocab>.reviews.csv` alongside the vocab file and
 is excluded from version control (`.gitignore`).
 
+## Rhymed composites
+
+`rhyme.py` makes Bible text rhyme without writing new words: it picks one
+existing translation per verse and chooses the line breaks (`rhyme.py joint`),
+then reports how much of the rhyme scheme it actually achieved.
+
+```bash
+python scripts/convert_scrollmapper.py --translation KJV   # also ASV BBE Darby Webster YLT
+python rhyme.py joint --bible kjv=data/kjv.txt --bible asv=data/asv.txt \
+    --ref "2 corinthians 6:" --conj --content --scheme AABB,ABAB
+```
+
+It does not produce "rhyming Bible text". Over the whole Bible, with 7
+translations, about 9% of scheme pairs rhyme, and the longest run of
+consecutive rhymes is 6 pairs (the priestly lots of 1 Chronicles 24). See
+`CLAUDE.md` for the measurements behind each option.
+
+### Prior work
+
+Every earlier rhymed Bible rewrites the wording to fit the verse, which this
+project deliberately does not do.
+
+- Metrical psalters: the Genevan Psalter (1562), Sternhold and Hopkins (1562),
+  the Bay Psalm Book (1640), the Scottish Psalter (1650), Tate and Brady (1696),
+  Isaac Watts (1719). See [Rhymed psalter](https://en.wikipedia.org/wiki/Rhymed_psalter).
+- Rob Bellingham, *The Bible in Verse*: the whole Bible in rhyming couplets,
+  about 1,000 pages ([Baptist NZ](https://baptist.nz/the-bible-as-a-poem/)).
+- T. J. W. Thornes, *The Bible in Rhyming Verse*: every chapter, Apocrypha
+  included, condensed to about two stanzas
+  ([Amazon](https://www.amazon.com/Bible-Rhyming-Verse-Tjw-Thornes/dp/1739135717)).
+- Amos J. Ferguson, *Bible Poem, or Versified Scripture in Rhyme*
+  ([Amazon](https://www.amazon.com/Bible-Poem-Versified-Scripture-Rhyme/dp/0243314604)).
+- "From Pastor to Poet: Rhyming the Entire Bible"
+  ([Medium](https://medium.com/disco-lightning/from-pastor-to-poet-rhyming-the-entire-bible-58b8abc886b8)).
+- Jotham McCauley, *The Bible Rhymes*: the New Testament as a condensed
+  rhyming summary ([thebiblerhymes.com](https://www.thebiblerhymes.com/)).
+- Brendan Conboy, *The Book of Psalms in Rhyme*
+  ([Bible Buying Guide](https://biblebuyingguide.com/the-book-of-psalms-in-rhyme/)).
+- Gary W. Parker, *Holy Bible Poetry*: 176 poems, each containing a passage
+  word for word
+  ([Amazon](https://www.amazon.com/Holy-Bible-Poetry-Biblical-Passages/dp/1796615749)).
+- A small GPT trained to write Psalm- and Proverb-style Spanish
+  ([GitHub](https://github.com/arturoappp/generative-ai-applications-project)).
+
 ## Configuration
 
 `parser.py` flags:
