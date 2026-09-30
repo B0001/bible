@@ -23,6 +23,7 @@ import argparse
 import csv
 import io
 import os
+import re
 import urllib.request
 
 URL = "https://raw.githubusercontent.com/scrollmapper/bible_databases/master/formats/csv/{}.csv"
@@ -71,6 +72,10 @@ def convert_rows(rows):
         # end in " --", which fuses with the " -- " separator every loader
         # splits on and corrupts the ref. An em dash is what "--" means there.
         text = " ".join(r["Text"].replace("--", "\u2014").split())
+        # scrollmapper's Darby glues every "God" to the word before it
+        # ("the Spirit ofGod", 3,439 times, "theGodhead" included); the other
+        # five texts have no lowercase-then-"God" at all, so this is a no-op there.
+        text = re.sub(r"(?<=[a-z])(?=God)", " ", text)
         if " -- " in f" {text} ":
             raise ValueError(f"separator inside verse text: {text!r}")
         out.append((f"{name[r['Book']]} {int(r['Chapter'])}:{int(r['Verse'])}", text))

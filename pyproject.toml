@@ -22,6 +22,8 @@ dev = [
 lexical = ["wordfreq>=3"]
 semantic = ["spacy>=3"]
 e2e = ["playwright>=1.40"]
+# rhyme.py --g2p: guessed pronunciations for words CMUDict lacks.
+g2p = ["g2p-en>=2.1"]
 # Postgres-backed read tracking (DATABASE_URL). An extra, not a core dep:
 # dash_app imports psycopg_pool lazily inside _pool(), so a SQLite-only install
 # never touches it. The Docker image DOES install these — see requirements.txt —
