@@ -38,6 +38,7 @@ substitution): ``python -m nltk.downloader cmudict wordnet stopwords``.
 """
 
 import argparse
+import csv
 import heapq
 import itertools
 import re
@@ -68,6 +69,47 @@ def pronunciations(word: str) -> list[list[str]]:
     return _cmu().get(word.lower(), [])
 
 
+_GUESS = False
+
+
+def guess_unknown(on: bool = True) -> None:
+    """Guess pronunciations for words CMUDict lacks, via g2p_en's neural model.
+
+    7.4% of the joint engine's full-Bible line endings are missing from
+    CMUDict (saith, Levites, Manasseh, Shechem, ...), and a word with no
+    pronunciation never rhymes -- which hits the name lists hardest, and those
+    are where the long rhyme runs are. Off by default: guesses are rough
+    ("honour" gets an H), and ``pronunciations`` stays CMUDict-only because
+    ``synonyms`` uses it as an is-this-a-word check. Needs
+    ``pip install '.[g2p]'``; without it this warns and changes nothing.
+    """
+    global _GUESS
+    _GUESS = on
+    rhyme_tails.cache_clear()
+    phonetic_distance.cache_clear()
+
+
+@lru_cache(maxsize=1)
+def _g2p():
+    try:
+        from g2p_en import G2p
+    except ImportError:
+        print("warning: g2p_en not installed (pip install '.[g2p]'); "
+              "words missing from CMUDict stay unrhymable", file=sys.stderr)
+        return None
+    return G2p()
+
+
+def guessed(word: str) -> list[list[str]]:
+    """[g2p guess] for an alphabetic word CMUDict lacks, when guessing is on."""
+    if not (_GUESS and word.isalpha() and not pronunciations(word)):
+        return []
+    g = _g2p()
+    # predict() is the bare neural model; G2p() itself also POS-tags, which
+    # needs another NLTK download and only matters for CMUDict homographs.
+    return [g.predict(word.lower())] if g else []
+
+
 def _tail(phones: Sequence[str]) -> tuple[str, ...]:
     """Phones from the last primary-stressed vowel on, stress digits stripped.
 
@@ -90,7 +132,7 @@ def rhyme_tails(word: str) -> frozenset[tuple[str, ...]]:
     and their unstressed vowel made "come"/"them" the second most common
     rhyme in the lineated KJV.
     """
-    prons = pronunciations(word)
+    prons = pronunciations(word) or guessed(word)
     stressed = [p for p in prons if any(ph.endswith("1") for ph in p)]
     return frozenset(_tail(p) for p in (stressed or prons))
 
@@ -172,23 +214,36 @@ def content_exact_distance(a: str, b: str) -> float:
     return 0.0 if content_rhymes(a, b) else 1.0
 
 
+def block_hits(
+    lines: Sequence[str], scheme: str | Sequence[str],
+    rhyme_test: Callable[[str, str], bool] = rhymes,
+) -> list[list[bool]]:
+    """Per strophe, whether each required pair rhymes, in pair order.
+
+    With several schemes (equal length), each strophe is scored under the one
+    it satisfies best -- the choice ``stitch_lineate`` makes per strophe.
+    """
+    schemes = [scheme] if isinstance(scheme, str) else list(scheme)
+    k = len(schemes[0])
+    out = []
+    for start in range(0, len(lines), k):
+        ends = [terminal_word(x) for x in lines[start:start + k]]
+        out.append(max(([rhyme_test(ends[i], ends[j]) for i, j in scheme_pairs(sc)
+                         if j < len(ends)] for sc in schemes), key=sum))
+    return out
+
+
 def scheme_satisfaction(
-    lines: Sequence[str], scheme: str, rhyme_test: Callable[[str, str], bool] = rhymes
+    lines: Sequence[str], scheme: str | Sequence[str],
+    rhyme_test: Callable[[str, str], bool] = rhymes,
 ) -> tuple[int, int]:
     """(rhyming pairs, required pairs) of ``lines`` under a repeating ``scheme``.
 
     Pass ``rhyme_test=content_rhymes`` to count only content-word rhymes.
+    Several schemes: each strophe counts under its best one (``block_hits``).
     """
-    k = len(scheme)
-    pairs = scheme_pairs(scheme)
-    hit = total = 0
-    for start in range(0, len(lines), k):
-        block = lines[start:start + k]
-        for i, j in pairs:
-            if j < len(block):
-                total += 1
-                hit += rhyme_test(terminal_word(block[i]), terminal_word(block[j]))
-    return hit, total
+    hits = block_hits(lines, scheme, rhyme_test)
+    return sum(map(sum, hits)), sum(map(len, hits))
 
 
 # ----------------------------------------------------------- System 1: stitch
@@ -392,7 +447,7 @@ def lineate(
 
 def stitch_lineate(
     corpora: dict[str, Sequence[str]],
-    scheme: str = "AABB",
+    scheme: str | Sequence[str] = "AABB",
     lo: int = 4,
     hi: int = 16,
     alpha: float = 1.0,
@@ -403,12 +458,26 @@ def stitch_lineate(
     distance: Callable[[str, str], float] = phonetic_distance,
     break_before: frozenset[str] = frozenset(),
     min_words: int = 1,
+    run_bonus: float = 0.0,
+    run_cap: int = 4,
 ) -> tuple[list[str], list[str], float]:
     """Choose each verse's translation *and* the line breaks, jointly and exactly.
 
     The objective is ``lineate``'s (rhyme reward, line-length term) plus
     ``stitch``'s register penalty between consecutive verses' translations;
     ``break_before`` and ``min_words`` act exactly as in ``lineate``.
+    ``scheme`` may also be a sequence of equal-length schemes (``["AABB",
+    "ABAB"]``): each strophe then picks whichever fits best, chosen inside the
+    same DP, so an ABAB strophe can follow an AABB one and vice versa.
+
+    ``run_bonus`` rewards *consecutive* rhymes. Required pairs complete in
+    text order; a pair that rhymes (distance 0) after ``r`` rhyming pairs in a
+    row earns an extra ``run_bonus * min(r, run_cap)``, so a run of n pairs
+    earns ``run_bonus * (0 + 1 + ... )``. Without it every rhyme scores the
+    same wherever it falls and the optimum scatters them: 1,764 of 1,850
+    runs on the full Bible were a single pair. The state carries the current
+    run (capped), so the optimum stays exact; at 0 the run is not tracked and
+    the result is unchanged.
     Every verse appears verbatim in exactly one translation, and a line may run
     across a verse boundary, so one line can join two translations. Returns
     ``(lines, translation per verse, cost)``; the cost equals the minimum,
@@ -434,11 +503,14 @@ def stitch_lineate(
     penalties = register_penalties or {}
     toks = {t: [v.split() for v in corpora[t]] for t in names}
     choices = [[t for t in names if toks[t][v]] for v in range(n_verses)]
-    k = len(scheme)
-    pairs = scheme_pairs(scheme)
+    schemes = [scheme] if isinstance(scheme, str) else list(scheme)
+    k = len(schemes[0])
+    if any(len(sc) != k for sc in schemes):
+        raise ValueError(f"schemes must share one strophe length, got {schemes}")
+    all_pairs = [scheme_pairs(sc) for sc in schemes]
     target = (lo + hi) / 2
-    keep = {i: tuple(a for a in range(i + 1) if any(p == a and q > i for p, q in pairs))
-            for i in range(k)}
+    keeps = [{i: tuple(a for a in range(i + 1) if any(p == a and q > i for p, q in pairs))
+              for i in range(k)} for pairs in all_pairs]
 
     def breakable(t, v, o):  # may a line end after o tokens of verse v in t?
         return break_after(toks[t][v], o - 1, break_before)
@@ -449,8 +521,11 @@ def stitch_lineate(
         return v
 
     # state: (verse, translation | None, consumed, last translation,
-    #         words in current line, passed a break, line index, *anchor words)
-    start = (verse_start(0), None, 0, None, 0, False, 0)
+    #         words in current line, passed a break, line index,
+    #         strophe's scheme (chosen as its first line ends),
+    #         current run of rhyming pairs (capped; 0 when run_bonus is 0),
+    #         *anchor words)
+    start = (verse_start(0), None, 0, None, 0, False, 0, 0, 0)
     best: dict[tuple, float] = {start: 0.0}
     back: dict[tuple, tuple] = {}
     heap = [((start[0], 0, 0), 0, start)]
@@ -472,11 +547,11 @@ def stitch_lineate(
         if st in done:
             continue
         done.add(st)
-        v, t, o, last, w0, seen0, i, *anchor_words = st
+        v, t, o, last, w0, seen0, i, sc, run, *anchor_words = st
         if v >= n_verses:
             finals.append(st)
             continue
-        held = dict(zip(keep[i - 1] if i else (), anchor_words, strict=True))
+        held = dict(zip(keeps[sc][i - 1] if i else (), anchor_words, strict=True))
         if t is None:
             opts = [(t2, gamma * _register(penalties, default_penalty, last, t2)
                      if last else 0.0) for t2 in choices[v]]
@@ -495,15 +570,25 @@ def stitch_lineate(
                 if w > hi and seen:
                     break
                 end = terminal_word(toks[tt][v][o2 - 1])
-                c = base + beta * abs(w - target) / target
-                for a, b in pairs:
-                    if b == i:
-                        c += alpha * (distance(held[a], end) - 1)
+                c0 = base + beta * abs(w - target) / target
                 ni = (i + 1) % k
                 held_n = {**held, i: end}
-                anchors = tuple(held_n[a] for a in keep[i]) if ni else ()
                 point = (verse_start(v + 1), None, 0) if o2 == n else (v, tt, o2)
-                relax(st, (*point, tt, 0, False, ni, *anchors), c, (v, tt, o, o2, True))
+                for s2 in (range(len(schemes)) if i == 0 else (sc,)):
+                    c, r2 = c0, run
+                    for a, b in all_pairs[s2]:  # at most one pair ends on line i
+                        if b == i:
+                            d = distance(held[a], end)
+                            c += alpha * (d - 1)
+                            if run_bonus:
+                                if d == 0:
+                                    c -= run_bonus * min(run, run_cap)
+                                    r2 = min(run + 1, run_cap)
+                                else:
+                                    r2 = 0
+                    anchors = tuple(held_n[a] for a in keeps[s2][i]) if ni else ()
+                    relax(st, (*point, tt, 0, False, ni, s2 if ni else 0, r2, *anchors), c,
+                          (v, tt, o, o2, True))
                 if w > hi:
                     break  # the first break past hi must end the line
                 seen = True
@@ -512,7 +597,7 @@ def stitch_lineate(
                 # also run on. ``seen`` says whether it passed a legal break.
                 nv = verse_start(v + 1)
                 if nv < n_verses:
-                    relax(st, (nv, None, 0, tt, w0 + n - o, seen, i, *anchor_words), base,
+                    relax(st, (nv, None, 0, tt, w0 + n - o, seen, i, sc, run, *anchor_words), base,
                           (v, tt, o, n, False))
     if not finals:
         return [], [], 0.0
@@ -663,6 +748,75 @@ def substitute(
     return out, edits
 
 
+def _swaps(wi: str, wj: str, rhyme_test: Callable[[str, str], bool]):
+    """End-word pairs that rhyme, fewest changes first: a synonym for the
+    second word, then for the first, then for both at once."""
+    si, sj = synonyms(wi), synonyms(wj)
+    for a, b in itertools.chain(((wi, c) for c in sj), ((c, wj) for c in si),
+                                itertools.product(si, sj)):
+        if rhyme_test(a, b):
+            yield a, b
+
+
+def repair_gaps(
+    lines: Sequence[str],
+    scheme: str | Sequence[str] = "AABB",
+    need: int = 2,
+    rhyme_test: Callable[[str, str], bool] = rhymes,
+    accept: Callable[[str], bool] | None = None,
+) -> tuple[list[str], list[tuple[int, str, str]]]:
+    """Lengthen rhyme runs by fixing the broken pairs between rhyming ones.
+
+    Required pairs, in text order, form one sequence (each strophe scored
+    under the scheme it already satisfies best). A broken pair is a gap when
+    ``need`` of its two neighbours rhyme: 2 bridges two runs into one, 1 also
+    extends a run at either end. A gap is fixed with ``_swaps``'s first
+    candidate that ``accept`` (optional gate, e.g. an LM check) passes for
+    every changed line and that leaves the strophe with more rhyming pairs
+    than before -- under AAAA a line anchors two pairs, and a swap that
+    repairs one must not break the other. Left to right, so a repaired gap
+    counts as a rhyming neighbour for the next. Returns the new lines and
+    ``(line index, old word, new word)`` edits.
+    """
+    schemes = [scheme] if isinstance(scheme, str) else list(scheme)
+    k = len(schemes[0])
+    out = list(lines)
+
+    def strophe(start, sc):
+        return [rhyme_test(terminal_word(out[start + i]), terminal_word(out[start + j]))
+                for i, j in scheme_pairs(sc) if start + j < len(out)]
+
+    seq = []  # (strophe start, its scheme, line i, line j)
+    for start in range(0, len(out), k):
+        sc = max(schemes, key=lambda s: sum(strophe(start, s)))
+        seq += [(start, sc, start + i, start + j) for i, j in scheme_pairs(sc)
+                if start + j < len(out)]
+    ok = [rhyme_test(terminal_word(out[i]), terminal_word(out[j])) for _, _, i, j in seq]
+    edits: list[tuple[int, str, str]] = []
+    for n, (start, sc, i, j) in enumerate(seq):
+        if ok[n] or (n > 0 and ok[n - 1]) + (n + 1 < len(seq) and ok[n + 1]) < need:
+            continue
+        wi, wj = terminal_word(out[i]), terminal_word(out[j])
+        before = sum(strophe(start, sc))
+        for a, b in _swaps(wi, wj, rhyme_test):
+            new = {x: replace_terminal(out[x], c) for x, c, w in ((i, a, wi), (j, b, wj))
+                   if c != w}
+            if accept and not all(map(accept, new.values())):
+                continue
+            old = {x: out[x] for x in new}
+            for x, v in new.items():
+                out[x] = v
+            if sum(strophe(start, sc)) > before:
+                edits += [(x, w, c) for x, c, w in ((i, a, wi), (j, b, wj)) if c != w]
+                for m, (st, _, p, q) in enumerate(seq):
+                    if st == start:
+                        ok[m] = rhyme_test(terminal_word(out[p]), terminal_word(out[q]))
+                break
+            for x, v in old.items():
+                out[x] = v
+    return out, edits
+
+
 # ------------------------------------------------------ rhyme-class graph
 
 def rhyme_adjacency(words: Sequence[str]) -> list[list[int]]:
@@ -731,6 +885,35 @@ def load_passage(path: str, ref_prefix: str) -> list[tuple[str, str]]:
     return rows
 
 
+def line_table(lines, path, corpora, refs):
+    """One row per output line: where it came from and how its end sounds.
+
+    ``lines``/``path`` are ``stitch_lineate``'s output; lines are rebuilt from
+    the chosen verses' tokens in order, so each line maps to the verse span
+    it covers. ``source`` says whether the end word's pronunciation is from
+    CMUDict, a g2p guess (``guess_unknown``), or missing (never rhymes).
+    """
+    owner = [v for v, t in enumerate(path) for _ in corpora[t][v].split()]
+    rows, k = [], 0
+    for n, line in enumerate(lines):
+        vs = owner[k:k + len(line.split())]
+        k += len(vs)
+        end = terminal_word(line)
+        prons = pronunciations(end)
+        source = "cmudict" if prons else ("g2p" if guessed(end) else "none")
+        prons = prons or guessed(end)
+        rows.append({
+            "line": n, "ref_start": refs[vs[0]], "ref_end": refs[vs[-1]],
+            "translations": "+".join(dict.fromkeys(path[v] for v in vs)),
+            "text": line, "end_word": end, "source": source,
+            "pron": " | ".join(" ".join(p) for p in prons),
+            "tails": " | ".join(" ".join(t) for t in sorted(rhyme_tails(end))),
+        })
+    if k != len(owner):
+        raise ValueError("lines do not cover the chosen verses' tokens")
+    return rows
+
+
 def _report(lines, scheme):
     hit, total = scheme_satisfaction(lines, scheme)
     content, _ = scheme_satisfaction(lines, scheme, content_rhymes)
@@ -762,7 +945,9 @@ def main(argv=None):
         p.add_argument("--hi", type=int, default=16, help="maximum words per line")
     for p in (s1, s2, s3, s4):
         p.add_argument("--ref", required=True, help='ref prefix, e.g. "psalms 23:"')
-        p.add_argument("--scheme", default="AABB")
+        p.add_argument("--scheme", default="AABB",
+                       help="rhyme scheme; joint also takes a comma list of equal-length "
+                            "schemes (AABB,ABAB), chosen per strophe")
     for p in (s1, s3, s4):
         p.add_argument("--content", action="store_true",
                        help="optimize for content-word rhymes (no me/thee)")
@@ -770,9 +955,27 @@ def main(argv=None):
                        help="give near-rhymes partial credit (tends to buy them "
                             "with one-word lines); default scores exact rhymes only")
     for p in (s3, s4):
+        p.add_argument("--g2p", action="store_true",
+                       help="guess pronunciations for words CMUDict lacks (needs '.[g2p]')")
         p.add_argument("--conj", action="store_true",
                        help="also allow breaks before and/but/for/that/which/...")
+    s4.add_argument("--run-bonus", type=float, default=0.0,
+                    help="extra reward per rhyming pair for each rhyming pair right "
+                         "before it (a rhyme is worth 1), favouring long runs")
+    s4.add_argument("--run-cap", type=int, default=4,
+                    help="run length at which the bonus stops growing")
+    s4.add_argument("--repair", type=int, choices=(1, 2), metavar="NEED",
+                    help="then swap end words for WordNet synonyms to fix broken pairs "
+                         "with NEED rhyming neighbours (2: bridge runs, 1: also extend)")
+    s4.add_argument("--table", metavar="PATH",
+                    help="also write a per-line CSV: refs, translations, text, "
+                         "end word, pronunciation, rhyme tails")
     args = ap.parse_args(argv)
+    if getattr(args, "g2p", False):
+        guess_unknown()
+    schemes = args.scheme.split(",")
+    if len(schemes) > 1 and args.cmd != "joint":
+        sys.exit("several schemes (--scheme AABB,ABAB) are supported by joint only")
     content, slant = getattr(args, "content", False), getattr(args, "slant", False)
     dist = {(False, False): exact_distance, (True, False): content_exact_distance,
             (False, True): phonetic_distance, (True, True): content_distance}[content, slant]
@@ -812,18 +1015,30 @@ def main(argv=None):
             penalties[(a, b)] = float(val)
         if args.cmd == "joint":
             lines, path, cost = stitch_lineate(
-                corpora, args.scheme, args.lo, args.hi, gamma=args.gamma,
+                corpora, schemes, args.lo, args.hi, gamma=args.gamma,
                 register_penalties=penalties, default_penalty=args.default_penalty,
                 distance=dist, break_before=CONJUNCTIONS if args.conj else frozenset(),
-                min_words=args.min_words)
+                min_words=args.min_words, run_bonus=args.run_bonus, run_cap=args.run_cap)
             for n, verses in corpora.items():
-                print(f"# {n}, one verse per line: {_report(verses, args.scheme)}")
-            print(f"# joint: {_report(lines, args.scheme)}")
+                print(f"# {n}, one verse per line: {_report(verses, schemes)}")
+            print(f"# joint: {_report(lines, schemes)}")
+            if args.repair:
+                test = content_rhymes if content else rhymes
+                lines, edits = repair_gaps(lines, schemes, args.repair, test)
+                print(f"# repaired: {_report(lines, schemes)}, {len(edits)} word(s) swapped")
+                for idx, old, new in edits:
+                    print(f"#   line {idx}: {old} -> {new}")
+            if args.table:
+                rows = line_table(lines, path, corpora, refs)
+                with open(args.table, "w", newline="", encoding="utf-8") as f:
+                    w = csv.DictWriter(f, fieldnames=list(rows[0]) if rows else ["line"])
+                    w.writeheader()
+                    w.writerows(rows)
             runs = [(t, len(list(g))) for t, g in itertools.groupby(path)]
             print("# translations in verse order: "
                   + ", ".join(f"{t}×{n}" for t, n in runs))
             for n, line in enumerate(lines):
-                if n and n % len(args.scheme) == 0:
+                if n and n % len(schemes[0]) == 0:
                     print()
                 print(line)
             return
