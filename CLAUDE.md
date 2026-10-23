@@ -8,9 +8,9 @@ A vocabulary-graded Bible reader for **English, Biblical Hebrew, and Koine
 Greek**. The core idea: given a user's known-words list ("your vocab"), score
 every verse by its **comprehension rate** — the fraction of its words the user
 already knows — and surface verses at the language-learning sweet spot (~95%
-known words, "i+1"). Texts are `verse -- reference` line format: NASB English
-(from `tushortz/variety-bible-text`), WLC Hebrew OT, Byzantine Greek NT, and
-the Delitzsch Hebrew NT (fetched by `scripts/convert_*.py`).
+known words, "i+1"). Texts are `verse -- reference` line format: WLC Hebrew OT
+(Open Scriptures Hebrew Bible), SBLGNT and Byzantine Greek NT, KJV English (from
+`tushortz/variety-bible-text`), and the Delitzsch Hebrew NT (fetched by `scripts/convert_*.py`).
 
 See `SPEC.md` for the improvement plan and locked-in decisions; this section
 describes the current state.
@@ -214,7 +214,7 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   at 360px, dark-mode background. Skips when playwright (`pip install
   '.[e2e]'` + `playwright install chromium`) or exported site data
   (`scripts/export_static.py`) is missing.
-- **`sample/`** — runnable sample data: `nasb_sample.txt` (12 verses),
+- **`sample/`** — runnable sample data: `kjv_sample.txt` (12 public-domain KJV verses),
   `my_vocab.txt` (EF top-100 English words), `hebrew_vocab.txt`,
   `greek_vocab.txt` (starter vocabularies for the original languages).
 
@@ -247,8 +247,8 @@ A second branch feeds the static site and the published dataset:
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 
 # Run the scoring pipeline on the bundled sample data
-.venv/bin/python parser.py --bible sample/nasb_sample.txt \
-    --vocab sample/my_vocab.txt --out out/nasb_graded.csv
+.venv/bin/python parser.py --bible sample/kjv_sample.txt \
+    --vocab sample/my_vocab.txt --out out/kjv_graded.csv
 
 # Hebrew / Greek (fetch texts first via scripts/convert_*.py)
 .venv/bin/python parser.py --bible data/wlc.txt \
@@ -271,7 +271,7 @@ block in `pyproject.toml`.
 
 One `Dockerfile` on `python:3.12-slim`: installs from `requirements.txt`,
 downloads NLTK stopwords, copies `bibles.toml` + `scripts/`, pre-grades the
-sample data to `out/nasb_graded.csv`, and serves via gunicorn
+KJV sample to `out/kjv_graded.csv`, and serves via gunicorn
 (`dash_app:server`) on `0.0.0.0:8050` with a `/health` endpoint.
 `requirements.txt` mirrors the core pyproject deps plus `psycopg`;
 `pyproject.toml` is canonical.

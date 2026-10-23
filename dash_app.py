@@ -46,7 +46,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "")
 USE_POSTGRES = DATABASE_URL.startswith(("postgres://", "postgresql://"))
 KNOWN_RATE = 0.95
 # Cap rows sent per callback: page_size only paginates client-side, so without
-# this a wide filter ships the entire corpus (~6 MB JSON for NASB) per request.
+# this a wide filter ships the entire corpus (~6 MB JSON for an English Bible).
 MAX_TABLE_ROWS = 500
 
 # Strips Hebrew nikudim/cantillation (U+0591–U+05C7), Greek combining diacritics
@@ -156,14 +156,15 @@ def load_bibles():
                 pl.col("verse").map_elements(_strip_marks, return_dtype=pl.Utf8).alias("verse_plain")
             )
             df = df_ord.sort("comprehension_rate", descending=True)
-            bibles["nasb"] = {
-                "name": "NASB (English)",
+            # The fallback CSV's translation is unknown: label it by file name.
+            bibles["graded"] = {
+                "name": f"Graded CSV ({os.path.basename(GRADED_CSV)})",
                 "lang": "en",
                 "df": df,
                 "df_ord": df_ord,
                 "audio": None,
             }
-            log.info("Loaded fallback NASB from %s (%d verses)", GRADED_CSV, df.height)
+            log.info("Loaded fallback CSV from %s (%d verses)", GRADED_CSV, df.height)
         except (OSError, pl.exceptions.PolarsError) as e:
             log.warning("Could not load fallback CSV %s: %s", GRADED_CSV, e)
 
@@ -175,7 +176,7 @@ BIBLES = load_bibles()
 if not BIBLES:
     sys.exit(
         "No Bible data found. Run parser.py to produce a graded CSV, e.g.:\n"
-        "  python parser.py --bible sample/nasb_sample.txt "
+        "  python parser.py --bible sample/kjv_sample.txt "
         "--vocab sample/my_vocab.txt --out out/graded.csv"
     )
 

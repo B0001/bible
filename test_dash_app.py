@@ -250,7 +250,7 @@ def test_audio_for_click(tmp_path):
         assert chapter["seek"] == 4.0
         assert len(chapter["verses"]) == 2
         assert dash_app.audio_for_click("audiotest", "Exod 1:1") is None  # unaligned verse
-        assert dash_app.audio_for_click("nasb", "Gen 1:1") is None  # bible without audio
+        assert dash_app.audio_for_click("graded", "Gen 1:1") is None  # bible without audio
         assert dash_app.audio_for_click("nope", "Gen 1:1") is None
     finally:
         del dash_app.BIBLES["audiotest"]
@@ -291,7 +291,7 @@ def test_audio_route_serves_and_guards(tmp_path):
         assert ok.data == b"OpusHead-fake"
         assert client.get("/audio/audiotest/../secret.txt").status_code == 404
         assert client.get("/audio/audiotest/%2e%2e/secret.txt").status_code == 404
-        assert client.get("/audio/nasb/Gen_001.opus").status_code == 404
+        assert client.get("/audio/graded/Gen_001.opus").status_code == 404
         assert client.get("/audio/unknown/Gen_001.opus").status_code == 404
     finally:
         del dash_app.BIBLES["audiotest"]

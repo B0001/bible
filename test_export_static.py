@@ -63,7 +63,7 @@ def test_export_audio_never_ships_audio_bytes(tmp_path):
 def test_export_audio_absent_manifest(tmp_path):
     site_data = tmp_path / "site" / "data"
     site_data.mkdir(parents=True)
-    assert export_audio({"id": "nasb"}, str(site_data), "x") is None
+    assert export_audio({"id": "kjv"}, str(site_data), "x") is None
     assert export_audio(
         {"id": "wlc", "audio_manifest": str(tmp_path / "nope.json")}, str(site_data), "x"
     ) is None
@@ -73,4 +73,4 @@ def test_export_audio_absent_manifest(tmp_path):
         {"chapters": [{"book": "Gen", "chapter": 1, "sidecar": str(tmp_path / "gone.json")}]}
     ))
     assert export_audio({"id": "wlc", "audio_manifest": str(manifest)}, str(site_data), "x") is None
-    assert not (site_data / "audio" / "nasb").exists()
+    assert not (site_data / "audio" / "kjv").exists()

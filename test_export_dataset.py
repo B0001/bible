@@ -163,7 +163,7 @@ def test_protestant_translations_share_one_order():
     """Seven translations rely on the same positional mapping."""
     shared = [b for b, codes in BOOK_ORDER.items() if codes is PROT66]
     assert set(shared) == {
-        "nasb", "valera", "luther1545", "ls1910", "almeida", "riveduta", "arabicsv",
+        "kjv", "valera", "luther1545", "ls1910", "almeida", "riveduta", "arabicsv",
     }
 
 
