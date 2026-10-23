@@ -1,9 +1,5 @@
-[[bibles]]
-id = "nasb"
-name = "NASB (English)"
-lang = "en"
-graded_csv = "out/nasb_graded.csv"
-source = "data/nasb.txt"
+# The first entry with data is the default bible in both readers (dash_app
+# and site/). WLC, SBLGNT and KJV lead; NASB was removed (Lockman copyright).
 
 [[bibles]]
 id = "wlc"
@@ -13,6 +9,22 @@ graded_csv = "out/wlc_graded.csv"
 source = "data/wlc.txt"
 # Phase 10 audio (local only; absent manifest/files degrade to no audio).
 audio_manifest = "out/audio/wlc_manifest.json"
+
+[[bibles]]
+id = "sblgnt"
+name = "Biblical Greek NT (SBLGNT)"
+lang = "el"
+graded_csv = "out/sblgnt_graded.csv"
+# python scripts/convert_gnt.py --edition sblgnt
+source = "data/sblgnt.txt"
+
+[[bibles]]
+id = "kjv"
+name = "King James Version (English)"
+lang = "en"
+graded_csv = "out/kjv_graded.csv"
+# curl -sf https://raw.githubusercontent.com/tushortz/variety-bible-text/master/bibles/kjv.txt -o data/kjv.txt
+source = "data/kjv.txt"
 
 [[bibles]]
 id = "gnt"

@@ -131,9 +131,9 @@ def test_degrades_when_database_unreachable():
     """
     _run(
         """
-        assert da.get_read_refs("nasb") == set()
-        da._mark_read("nasb", ["Gen 1:1"])
-        da._mark_unread("nasb", ["Gen 1:1"])
+        assert da.get_read_refs("kjv") == set()
+        da._mark_read("kjv", ["Gen 1:1"])
+        da._mark_unread("kjv", ["Gen 1:1"])
         print("degraded cleanly")
         """,
         dsn="postgresql://postgres:test@localhost:15499/reads",

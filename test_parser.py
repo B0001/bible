@@ -824,7 +824,7 @@ def test_cli_writes_difficulty_rank(tmp_path, monkeypatch):
     import sys
 
     # Use the sample data that's in the repo
-    bible_path = "sample/nasb_sample.txt"
+    bible_path = "sample/kjv_sample.txt"
     vocab_path = "sample/my_vocab.txt"
     out_path = str(tmp_path / "out.csv")
 

@@ -75,8 +75,9 @@ jobs:
       - name: Fetch Bible texts
         run: |
           mkdir -p data
-          curl -sf https://raw.githubusercontent.com/tushortz/variety-bible-text/master/bibles/nasb.txt -o data/nasb.txt
+          curl -sf https://raw.githubusercontent.com/tushortz/variety-bible-text/master/bibles/kjv.txt -o data/kjv.txt
           python scripts/convert_wlc.py
+          python scripts/convert_gnt.py --edition sblgnt
           python scripts/convert_gnt.py
           python scripts/convert_delitzsch_nt.py
           for t in valera luther1545 ls1910 synodal almeida riveduta statenvertaling arabicsv; do
