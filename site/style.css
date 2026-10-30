@@ -597,3 +597,7 @@ span.pause {
   opacity: 0.55;
   margin: 0 0.15em;
 }
+
+/* Credits footer: SBLGNT is CC BY 4.0, which requires visible attribution */
+.credits { margin: 32px 0 0; padding-top: 12px; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.8rem; }
+.credits a { color: inherit; }
