@@ -14,12 +14,13 @@ COPY parser.py dash_app.py bibles.toml ./
 COPY sample ./sample
 COPY scripts ./scripts
 
-# Pre-grade the bundled sample data so the app has something to serve out of the
-# box (the nasb entry in bibles.toml; other entries are skipped until their CSVs
-# exist). To add Hebrew/Greek texts, run the scripts/ converters and parser.py
-# with --lang inside the container or mount pre-graded CSVs into out/.
-RUN python parser.py --bible sample/nasb_sample.txt \
-        --vocab sample/my_vocab.txt --out out/nasb_graded.csv
+# Pre-grade the bundled public-domain KJV sample so the app has something to
+# serve out of the box (the kjv entry in bibles.toml; other entries are skipped
+# until their CSVs exist). To add the WLC/SBLGNT texts, run the scripts/
+# converters and parser.py with --lang inside the container or mount pre-graded
+# CSVs into out/.
+RUN python parser.py --bible sample/kjv_sample.txt \
+        --vocab sample/my_vocab.txt --out out/kjv_graded.csv
 
 # Non-root runtime. Kubernetes pins runAsUser/runAsGroup to this same 10001 so
 # the PVC holding reads.db is writable; keep the two in sync if either changes.

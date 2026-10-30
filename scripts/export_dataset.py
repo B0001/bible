@@ -20,7 +20,7 @@ Two deliverables, deliberately in two formats:
                                   polytonic Greek.
 
 **No verse text is exported.** Only refs and derived metrics. That keeps
-copyrighted translations (NASB) publishable as derived data and is why the
+any copyrighted translation publishable as derived data and is why the
 schema stops at counts and ranks.
 
 Only vocabulary-independent columns ship. `comprehension_rate` and
@@ -201,10 +201,10 @@ SYNODAL78 = [
 # that each book occupies one contiguous run, so a source whose order drifts
 # fails loudly instead of silently mislabelling.
 BOOK_ORDER = {
-    "nasb": PROT66, "valera": PROT66, "luther1545": PROT66, "ls1910": PROT66,
+    "kjv": PROT66, "valera": PROT66, "luther1545": PROT66, "ls1910": PROT66,
     "almeida": PROT66, "riveduta": PROT66, "arabicsv": PROT66,
     "statenvertaling": STATEN67, "synodal": SYNODAL78,
-    "wlc": OT39, "gnt": NT27, "modern-he-nt": NT27,
+    "wlc": OT39, "sblgnt": NT27, "gnt": NT27, "modern-he-nt": NT27,
 }
 
 
@@ -326,7 +326,7 @@ def write_books_csv(out_dir, bible_ids, names_by_bible):
 
     - `english` / `hebrew` / `greek` are curated canonical names — the answer
       to "what is this book called in that language".
-    - the per-translation columns (`nasb`, `wlc`, ...) are the book strings as
+    - the per-translation columns (`kjv`, `wlc`, ...) are the book strings as
       they literally appear in that text's refs, so they stay joinable against
       the Parquet `ref` field. For `wlc` and `gnt` those are Latin
       abbreviations; the real names live in the `hebrew` / `greek` columns.
@@ -392,7 +392,7 @@ keyed on USFM codes. Produced by [bible-reader](https://github.com/) — see
 ## No verse text
 
 This dataset contains **references and derived metrics only, never verse
-text**. That is deliberate: it keeps translations under copyright (NASB)
+text**. That is deliberate: it keeps any translation under copyright
 publishable as derived data, and it keeps the download small. Fetch the texts
 themselves from their own sources.
 
@@ -442,7 +442,7 @@ difference matters:
 
 - **`english`, `hebrew`, `greek`** are curated canonical names — what the book
   is actually called in that language.
-- **The per-translation columns** (`nasb`, `wlc`, `synodal`, …) hold the book
+- **The per-translation columns** (`kjv`, `wlc`, `synodal`, …) hold the book
   string exactly as it appears in that text's references, so they join against
   the `ref` field in the Parquet files. For `wlc` and `gnt` those are the Latin
   abbreviations the source files ship (`Gen`, `Matt`) — the real names are in

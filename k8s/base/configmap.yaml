@@ -19,6 +19,6 @@ data:
   READS_POOL_MAX: "4"
   # Baked into the image by the Dockerfile's pre-grade step. Only consulted if
   # bibles.toml yields no usable entries.
-  BIBLE_GRADED_CSV: "out/nasb_graded.csv"
+  BIBLE_GRADED_CSV: "out/kjv_graded.csv"
   GUNICORN_WORKERS: "2"
   GUNICORN_TIMEOUT: "60"
