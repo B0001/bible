@@ -73,16 +73,16 @@ mkdir -p /tmp/site && cp site/index.html site/*.css site/*.js /tmp/site/
 ## Run: the Dash app
 
 Needs a graded CSV for at least one `bibles.toml` entry. Grade the **full** text,
-not `sample/nasb_sample.txt` — see the gotcha below:
+not `sample/kjv_sample.txt` — see the gotcha below:
 
 ```bash
-.venv/bin/python parser.py --bible data/nasb.txt \
-    --vocab sample/my_vocab.txt --out out/nasb_graded.csv
-# → Graded 31102 verses -> out/nasb_graded.csv; 0 at >= 95% comprehension.
+.venv/bin/python parser.py --bible data/kjv.txt \
+    --vocab sample/my_vocab.txt --out out/kjv_graded.csv
 .venv/bin/python .claude/skills/run-bible-reader/driver.py dash
 ```
 
-Verified output — note the passage result, which is correct behavior, not a
+Verified output, recorded before NASB was removed from `bibles.toml` (not re-run
+for KJV) — note the passage result, which is correct behavior, not a
 failure (see Gotchas):
 
 ```
@@ -133,7 +133,7 @@ serving http://127.0.0.1:51352/
 ## Run: the parser CLI (no browser)
 
 ```bash
-.venv/bin/python parser.py --bible sample/nasb_sample.txt \
+.venv/bin/python parser.py --bible sample/kjv_sample.txt \
     --vocab sample/my_vocab.txt --out /tmp/graded.csv
 # → Graded 12 verses -> /tmp/graded.csv; 0 at >= 95% comprehension.
 ```
@@ -177,8 +177,8 @@ looks identical to passing. Verify with:
   3.x the options render as `.dash-options-list-option-text` **outside** the
   `#bible-select` element (older React-Select builds used `.Select-option`
   inside it) — the driver tries both.
-- **Do not grade `sample/nasb_sample.txt` into `out/nasb_graded.csv`.** That is
-  the path `bibles.toml` maps the NASB entry to, and the sample is 12 verses. It
+- **Do not grade `sample/kjv_sample.txt` into `out/kjv_graded.csv`.** That is
+  the path `bibles.toml` maps the KJV entry to, and the sample is 12 verses. It
   overwrites a full 31,102-verse grading with 12 rows, all below the default rate
   filter, so the Dash table renders empty and the driver times out waiting for
   `#table td`. (This bit me while writing this skill.) Grade the sample to a

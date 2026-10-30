@@ -58,7 +58,7 @@ python3 -m venv .venv
 
 # Grade the bundled sample verses
 .venv/bin/python parser.py \
-    --bible sample/nasb_sample.txt \
+    --bible sample/kjv_sample.txt \
     --vocab sample/my_vocab.txt \
     --out out/graded.csv
 
@@ -70,12 +70,12 @@ python3 -m venv .venv
 
 - **Vocab:** any file of whitespace-separated words (`sample/my_vocab.txt` is the
   EF top-100 English words).
-- **Bible text:** lines of `verse text -- reference`. The full NASB used in
-  development comes from
-  [`tushortz/variety-bible-text`](https://raw.githubusercontent.com/tushortz/variety-bible-text/master/bibles/nasb.txt).
+- **Bible text:** lines of `verse text -- reference`. The full KJV used by
+  the default config comes from
+  [`tushortz/variety-bible-text`](https://raw.githubusercontent.com/tushortz/variety-bible-text/master/bibles/kjv.txt).
 
 ```bash
-python parser.py --bible nasb.txt --vocab my_words.txt --out out/graded.csv \
+python parser.py --bible kjv.txt --vocab my_words.txt --out out/graded.csv \
     --known-rate 0.95 --min-verse-length 1
 ```
 
@@ -128,16 +128,16 @@ Italian, Dutch, and Arabic (harakat-insensitive, RTL).
 
 ```bash
 # Score contiguous 3-verse passages (find a readable multi-verse stretch)
-python parser.py --bible nasb.txt --vocab my_words.txt --out out/graded.csv \
+python parser.py --bible kjv.txt --vocab my_words.txt --out out/graded.csv \
     --passage-window 3 --passage-out out/passages.csv
 
 # Rank the 20 highest-leverage words to learn next (each ranked by how many
 # almost-readable verses learning it alone would unlock)
-python parser.py --bible nasb.txt --vocab my_words.txt --out out/graded.csv \
+python parser.py --bible kjv.txt --vocab my_words.txt --out out/graded.csv \
     --next-words 20 --next-words-out out/next_words.csv
 
 # Add an effort column (how hard are the unknown words?) — requires [lexical]
-python parser.py --bible nasb.txt --vocab my_words.txt --out out/graded.csv \
+python parser.py --bible kjv.txt --vocab my_words.txt --out out/graded.csv \
     --effort
 ```
 
