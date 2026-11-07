@@ -79,8 +79,10 @@ jobs:
           python scripts/convert_wlc.py
           python scripts/convert_gnt.py --edition sblgnt
           python scripts/convert_gnt.py
-          python scripts/convert_delitzsch_nt.py
-          for t in valera luther1545 ls1910 synodal almeida riveduta statenvertaling arabicsv; do
+          # Left out on purpose: the Delitzsch Hebrew NT, valera, ls1910 and
+          # arabicsv, whose stated terms don't clearly cover a public site
+          # (README, "Text and audio credits"). Unfetched texts are not exported.
+          for t in luther1545 synodal almeida riveduta statenvertaling; do
             python scripts/convert_getbible.py --translation "$t"
           done
       - name: Export static site data
