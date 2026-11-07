@@ -597,3 +597,11 @@ span.pause {
   opacity: 0.55;
   margin: 0 0.15em;
 }
+
+.credits {
+  font-size: 0.75rem;
+  opacity: 0.75;
+  max-width: 900px;
+  margin: 2rem auto 0;
+  padding: 0 1rem 1rem;
+}

@@ -138,6 +138,8 @@ def load_bibles():
                     "lang": entry.get("lang", "en"),
                     "df": df,
                     "df_ord": df_ord,
+                    "attribution": entry.get("attribution", ""),
+                    "audio_attribution": entry.get("audio_attribution", ""),
                     "audio": (
                         load_audio_manifest(entry["audio_manifest"])
                         if "audio_manifest" in entry
@@ -393,6 +395,15 @@ audio_layout = (
     else []
 )
 
+# Credit lines the sources' licences ask for (CC BY 4.0 for OSHB and SBLGNT),
+# from bibles.toml `attribution` / `audio_attribution`, for the loaded bibles.
+credits = [
+    html.Li(f"{b['name']}: {b['attribution']}"
+            + (f" {b['audio_attribution']}" if b["audio"] and b["audio_attribution"] else ""))
+    for b in BIBLES.values()
+    if b.get("attribution")
+]
+
 app.layout = html.Div(
     style={"maxWidth": "900px", "margin": "0 auto", "fontFamily": "sans-serif"},
     children=[
@@ -481,6 +492,12 @@ app.layout = html.Div(
         html.Div(id="passage-panel", style={"display": "none"}),
         # Incremented by mark callbacks to trigger table refresh
         dcc.Store(id="reads-store", data=0),
+        *(
+            [html.Footer([html.H4("Credits"), html.Ul(credits)],
+                         style={"fontSize": "0.8rem", "color": "#555", "marginTop": "2rem"})]
+            if credits
+            else []
+        ),
     ],
 )
 

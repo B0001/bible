@@ -9,6 +9,8 @@ graded_csv = "out/wlc_graded.csv"
 source = "data/wlc.txt"
 # Phase 10 audio (local only; absent manifest/files degrade to no audio).
 audio_manifest = "out/audio/wlc_manifest.json"
+attribution = "Westminster Leningrad Codex (public domain) via the Open Scriptures Hebrew Bible. Original work of the Open Scriptures Hebrew Bible available at https://github.com/openscriptures/morphhb (CC BY 4.0, https://creativecommons.org/licenses/by/4.0/). Morpheme dividers removed."
+audio_attribution = "Audio: Faith Comes By Hearing, https://www.faithcomesbyhearing.com (Hebrew OT set HBRHMTN1DA). Free of charge; played locally only, never redistributed."
 
 [[bibles]]
 id = "sblgnt"
@@ -17,6 +19,7 @@ lang = "el"
 graded_csv = "out/sblgnt_graded.csv"
 # python scripts/convert_gnt.py --edition sblgnt
 source = "data/sblgnt.txt"
+attribution = "SBL Greek New Testament. Copyright 2010 Society of Biblical Literature and Logos Bible Software. CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); source https://github.com/LogosBible/SBLGNT. Apparatus sigla removed."
 
 [[bibles]]
 id = "kjv"
@@ -25,6 +28,7 @@ lang = "en"
 graded_csv = "out/kjv_graded.csv"
 # curl -sf https://raw.githubusercontent.com/tushortz/variety-bible-text/master/bibles/kjv.txt -o data/kjv.txt
 source = "data/kjv.txt"
+attribution = "King James Version: public domain outside the UK; in the UK, rights are vested in the Crown (patentee: Cambridge University Press). Text from https://github.com/tushortz/variety-bible-text."
 
 [[bibles]]
 id = "gnt"
@@ -32,6 +36,7 @@ name = "Biblical Greek NT (Byzantine)"
 lang = "el"
 graded_csv = "out/gnt_graded.csv"
 source = "data/gnt.txt"
+attribution = "Robinson-Pierpont Byzantine Majority Text, dedicated to the public domain (Unlicense); https://github.com/byztxt/byzantine-majority-text."
 
 [[bibles]]
 id = "modern-he-nt"
@@ -39,6 +44,7 @@ name = "Modern Hebrew NT (Delitzsch)"
 lang = "he"
 graded_csv = "out/modern_he_nt_graded.csv"
 source = "data/modern_he_nt.txt"
+attribution = "Delitzsch Hebrew New Testament, from https://github.com/HebrewNewTestament/HebDelitzsch (no licence stated there)."
 
 # The entries below are fetched via: python scripts/convert_getbible.py --translation <id>
 
@@ -48,6 +54,7 @@ name = "Reina Valera (Spanish)"
 lang = "es"
 graded_csv = "out/valera_graded.csv"
 source = "data/valera.txt"
+attribution = "Reina-Valera 1909 via https://api.getbible.net (CrossWire module). Module licence: Copyrighted; Permission to distribute granted to CrossWire."
 
 [[bibles]]
 id = "luther1545"
@@ -55,6 +62,7 @@ name = "Luther 1545 (German)"
 lang = "de"
 graded_csv = "out/luther1545_graded.csv"
 source = "data/luther1545.txt"
+attribution = "Luther 1545 via https://api.getbible.net (CrossWire module). Module licence: Public Domain."
 
 [[bibles]]
 id = "ls1910"
@@ -62,6 +70,7 @@ name = "Louis Segond 1910 (French)"
 lang = "fr"
 graded_csv = "out/ls1910_graded.csv"
 source = "data/ls1910.txt"
+attribution = "Louis Segond 1910 via https://api.getbible.net (CrossWire module). Module licence: Copyrighted; Permission to distribute granted to CrossWire."
 
 [[bibles]]
 id = "synodal"
@@ -69,6 +78,7 @@ name = "Synodal (Russian)"
 lang = "ru"
 graded_csv = "out/synodal_graded.csv"
 source = "data/synodal.txt"
+attribution = "Synodal Translation (1876) via https://api.getbible.net (CrossWire module). Module licence: Public Domain."
 
 [[bibles]]
 id = "almeida"
@@ -76,6 +86,7 @@ name = "Almeida (Portuguese)"
 lang = "pt"
 graded_csv = "out/almeida_graded.csv"
 source = "data/almeida.txt"
+attribution = "Almeida Atualizada via https://api.getbible.net (CrossWire module). Module licence: GPL."
 
 [[bibles]]
 id = "riveduta"
@@ -83,6 +94,7 @@ name = "Riveduta (Italian)"
 lang = "it"
 graded_csv = "out/riveduta_graded.csv"
 source = "data/riveduta.txt"
+attribution = "Riveduta (1927) via https://api.getbible.net (CrossWire module). Module licence: Public Domain."
 
 [[bibles]]
 id = "statenvertaling"
@@ -90,6 +102,7 @@ name = "Statenvertaling (Dutch)"
 lang = "nl"
 graded_csv = "out/statenvertaling_graded.csv"
 source = "data/statenvertaling.txt"
+attribution = "Statenvertaling via https://api.getbible.net (CrossWire module). Module licence: Public Domain."
 
 [[bibles]]
 id = "arabicsv"
@@ -97,3 +110,4 @@ name = "Smith & Van Dyke (Arabic)"
 lang = "ar"
 graded_csv = "out/arabicsv_graded.csv"
 source = "data/arabicsv.txt"
+attribution = "Smith & Van Dyke (1865) via https://api.getbible.net (CrossWire module). Module licence: Copyrighted; Permission granted to distribute non-commercially in SWORD format."
