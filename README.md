@@ -228,6 +228,10 @@ rightsholder was found.
 | getbible.net texts (valera, luther1545, ls1910, synodal, almeida, riveduta, statenvertaling, arabicsv) | As quoted in `bibles.toml`. valera and ls1910 say "Copyrighted; Permission to distribute granted to CrossWire", arabicsv says non-commercial "in SWORD format" only, almeida says GPL | [getbible translations.json](https://api.getbible.net/v2/translations.json): third-party metadata, unverified with the rightsholders | Module licence quoted |
 | Hebrew OT audio, Faith Comes By Hearing (HBRHMTN1DA) | Free; the [Bible Brain licence](https://www.faithcomesbyhearing.com/bible-brain/license) requires free access for end users and posted copyright notices | The fileset's own copyright notice is unverified | Local playback only; never in the Docker image or on Pages |
 
+Since 2026-11-07 the GitHub Pages site leaves out the Delitzsch Hebrew NT,
+valera, ls1910 and arabicsv, because their stated terms don't clearly let a
+public site serve them. They still load locally once their files are in `data/`.
+
 NASB (Lockman Foundation copyright) was removed from every served config on
 2026-10-23. Older commits still contain NASB text. Rewriting git history needs
 counsel and the owner's approval.
