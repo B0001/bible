@@ -211,6 +211,27 @@ project deliberately does not do.
 - A small GPT trained to write Psalm- and Proverb-style Spanish
   ([GitHub](https://github.com/arturoappp/generative-ai-applications-project)).
 
+## Text and audio credits
+
+Both readers list a credit line for each loaded text (the `attribution` key in
+`bibles.toml`) at the foot of the page. Licences were checked on 2026-10-18
+against the sources linked below. "Unverified" means no statement from the
+rightsholder was found.
+
+| Text / audio | Licence | Checked against | Attribution |
+|---|---|---|---|
+| WLC Hebrew OT via the Open Scriptures Hebrew Bible (OSHB) | WLC public domain; OSHB CC BY 4.0 | [morphhb LICENSE.md](https://github.com/openscriptures/morphhb/blob/master/LICENSE.md) | Required: "Original work of the Open Scriptures Hebrew Bible available at https://github.com/openscriptures/morphhb" |
+| SBL Greek New Testament (SBLGNT) | CC BY 4.0 | [LogosBible/SBLGNT README and LICENSE](https://github.com/LogosBible/SBLGNT) | Required: Copyright 2010 Society of Biblical Literature and Logos Bible Software, licence link, changes noted |
+| King James Version | Public domain outside the UK; Crown rights in the UK | Unverified: Cambridge University Press's rights page returned HTTP 403; wording from [bible.com](https://www.bible.com/versions/1) | Not required outside the UK; credited anyway |
+| Byzantine Majority Text (Robinson-Pierpont) | Unlicense (public domain) | [byztxt LICENSE.txt](https://github.com/byztxt/byzantine-majority-text/blob/master/LICENSE.txt) | None required |
+| Delitzsch Hebrew NT | Unverified: the source repo states no licence | [HebrewNewTestament/HebDelitzsch](https://github.com/HebrewNewTestament/HebDelitzsch) | Credited anyway |
+| getbible.net texts (valera, luther1545, ls1910, synodal, almeida, riveduta, statenvertaling, arabicsv) | As quoted in `bibles.toml`. valera and ls1910 say "Copyrighted; Permission to distribute granted to CrossWire", arabicsv says non-commercial "in SWORD format" only, almeida says GPL | [getbible translations.json](https://api.getbible.net/v2/translations.json): third-party metadata, unverified with the rightsholders | Module licence quoted |
+| Hebrew OT audio, Faith Comes By Hearing (HBRHMTN1DA) | Free; the [Bible Brain licence](https://www.faithcomesbyhearing.com/bible-brain/license) requires free access for end users and posted copyright notices | The fileset's own copyright notice is unverified | Local playback only; never in the Docker image or on Pages |
+
+NASB (Lockman Foundation copyright) was removed from every served config on
+2026-10-23. Older commits still contain NASB text. Rewriting git history needs
+counsel and the owner's approval.
+
 ## Configuration
 
 `parser.py` flags:

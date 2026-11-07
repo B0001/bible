@@ -823,6 +823,15 @@ async function init() {
     opt.textContent = `${b.name} (${b.verses.toLocaleString()} verses)`;
     el.bibleSelect.appendChild(opt);
   }
+  // Credit lines the sources' licences ask for (bibles.toml `attribution`).
+  const credits = document.getElementById('credits');
+  for (const b of manifest.bibles) {
+    if (!credits || !b.attribution) continue;
+    const p = document.createElement('p');
+    p.textContent = `${b.name}: ${b.attribution}`
+      + (b.audio && b.audio_attribution ? ` ${b.audio_attribution}` : '');
+    credits.appendChild(p);
+  }
   const saved = loadJSON('bible', manifest.bibles[0].id);
   const id = manifest.bibles.some(b => b.id === saved) ? saved : manifest.bibles[0].id;
   el.bibleSelect.value = id;

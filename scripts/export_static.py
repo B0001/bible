@@ -67,6 +67,7 @@ def export_bible(entry, site_data_dir):
         "lang": lang,
         "verses": len(refs),
         "file": f"data/{entry['id']}.json",
+        "attribution": entry.get("attribution", ""),
     }
 
 
@@ -150,6 +151,7 @@ def main():
                 audio_index = export_audio(entry, site_data_dir, args.audio_base)
                 if audio_index:
                     m["audio"] = audio_index
+                    m["audio_attribution"] = entry.get("audio_attribution", "")
             manifest_bibles.append(m)
 
     from parser import SNOWBALL_LANGS
