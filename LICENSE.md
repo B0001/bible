@@ -4,6 +4,8 @@ Version 2.0.0
 
 <https://bigtimelicense.com/versions/2.0.0>
 
+Required Notice: Copyright 2026 Benjamin James Hess (hess.bn@gmail.com)
+
 ## Purpose
 
 These terms let you use and share this software for noncommercial purposes and in small business for free, while also guaranteeing that paid licenses for big businesses will be available on fair, reasonable, and nondiscriminatory terms.

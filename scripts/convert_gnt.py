@@ -5,8 +5,8 @@
 byztxt/byzantine-majority-text on GitHub — CSV files per book under
 csv-unicode/ccat/no-variants/, columns: chapter, verse, text. -> data/gnt.txt
 
---edition sblgnt: the SBL Greek New Testament (CC BY 4.0, attribution in
-bibles.toml), from LogosBible/SBLGNT on GitHub — data/sblgnt/text/<Book>.txt,
+--edition sblgnt: the SBL Greek New Testament (CC BY 4.0, credited in the
+site footer), from LogosBible/SBLGNT on GitHub — data/sblgnt/text/<Book>.txt,
 a title line then "Matt 1:1<TAB>text". Apparatus sigla are removed.
 -> data/sblgnt.txt
 
