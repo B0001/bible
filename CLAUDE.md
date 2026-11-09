@@ -171,7 +171,9 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   ASV/BBE/Darby/KJV/Webster/YLT), `convert_wlc.py` (Hebrew OT from openscriptures/morphhb
   OSIS XML; strips morphhb's `/` morpheme markers), `convert_gnt.py` (Greek NT
   from byztxt CSV files), `convert_delitzsch_nt.py` (Hebrew NT from
-  HebrewNewTestament/HebDelitzsch OSIS).
+  HebrewNewTestament/HebDelitzsch OSIS), `convert_ebible.py` (public-domain
+  Spanish/French/Arabic from eBible.org, written under the getbible-era file and
+  book names so refs don't change).
 - **`scripts/export_dataset.py`** — builds a HuggingFace-ready dataset in
   `out/dataset/` from `site/data/` (run `export_static.py` first); uploading
   needs `pip install '.[dataset]'` (the Hub CLI is an extra, not a core dep —

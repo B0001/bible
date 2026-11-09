@@ -79,11 +79,15 @@ jobs:
           python scripts/convert_wlc.py
           python scripts/convert_gnt.py --edition sblgnt
           python scripts/convert_gnt.py
-          # Left out on purpose: the Delitzsch Hebrew NT, valera, ls1910 and
-          # arabicsv, whose stated terms don't clearly cover a public site
-          # (README, "Text and audio credits"). Unfetched texts are not exported.
+          # Left out on purpose: the Delitzsch Hebrew NT, whose source states no
+          # licence (README, "Text and audio credits"). Unfetched texts are not
+          # exported. valera, ls1910 and arabicsv come from eBible.org's
+          # public-domain copies, not getbible's CrossWire ones.
           for t in luther1545 synodal almeida riveduta statenvertaling; do
             python scripts/convert_getbible.py --translation "$t"
+          done
+          for t in spaRV1909 fraLSG arb-vd; do
+            python scripts/convert_ebible.py --translation "$t"
           done
       - name: Export static site data
         run: python scripts/export_static.py
