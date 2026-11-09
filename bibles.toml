@@ -46,15 +46,17 @@ graded_csv = "out/modern_he_nt_graded.csv"
 source = "data/modern_he_nt.txt"
 attribution = "Delitzsch Hebrew New Testament, from https://github.com/HebrewNewTestament/HebDelitzsch (no licence stated there)."
 
-# The entries below are fetched via: python scripts/convert_getbible.py --translation <id>
+# The entries below are fetched via: python scripts/convert_getbible.py --translation <id>,
+# except valera, ls1910 and arabicsv, which come from eBible.org (see each entry).
 
 [[bibles]]
 id = "valera"
 name = "Reina Valera (Spanish)"
 lang = "es"
 graded_csv = "out/valera_graded.csv"
+# python scripts/convert_ebible.py --translation spaRV1909
 source = "data/valera.txt"
-attribution = "Reina-Valera 1909 via https://api.getbible.net (CrossWire module). Module licence: Copyrighted; Permission to distribute granted to CrossWire."
+attribution = "Reina-Valera 1909, public domain, from eBible.org (https://ebible.org/find/show.php?id=spaRV1909). Supplied-word brackets removed."
 
 [[bibles]]
 id = "luther1545"
@@ -69,8 +71,9 @@ id = "ls1910"
 name = "Louis Segond 1910 (French)"
 lang = "fr"
 graded_csv = "out/ls1910_graded.csv"
+# python scripts/convert_ebible.py --translation fraLSG
 source = "data/ls1910.txt"
-attribution = "Louis Segond 1910 via https://api.getbible.net (CrossWire module). Module licence: Copyrighted; Permission to distribute granted to CrossWire."
+attribution = "Louis Segond 1910, public domain, from eBible.org (https://ebible.org/find/show.php?id=fraLSG)."
 
 [[bibles]]
 id = "synodal"
@@ -109,5 +112,6 @@ id = "arabicsv"
 name = "Smith & Van Dyke (Arabic)"
 lang = "ar"
 graded_csv = "out/arabicsv_graded.csv"
+# python scripts/convert_ebible.py --translation arb-vd
 source = "data/arabicsv.txt"
-attribution = "Smith & Van Dyke (1865) via https://api.getbible.net (CrossWire module). Module licence: Copyrighted; Permission granted to distribute non-commercially in SWORD format."
+attribution = "Smith & Van Dyke (1865; Syrian Mission, American Bible Society), public domain, from eBible.org (https://ebible.org/find/show.php?id=arb-vd)."

@@ -112,11 +112,16 @@ ru); Hebrew/Greek strip marks; anything else matches on exact lowercased word
 forms:
 
 ```bash
-python scripts/convert_getbible.py --list                  # browse translations
-python scripts/convert_getbible.py --translation valera    # Spanish Reina Valera
-python parser.py --bible data/valera.txt --vocab my_spanish_words.txt \
-    --out out/valera_graded.csv --lang es
+python scripts/convert_getbible.py --list                    # browse translations
+python scripts/convert_getbible.py --translation luther1545  # German Luther 1545
+python parser.py --bible data/luther1545.txt --vocab my_german_words.txt \
+    --out out/luther1545_graded.csv --lang de
 ```
+
+The Spanish, French and Arabic texts in `bibles.toml` come from eBible.org
+instead, whose copies are public domain: `scripts/convert_ebible.py
+--translation spaRV1909` (or `fraLSG`, `arb-vd`) writes `data/valera.txt`
+(`data/ls1910.txt`, `data/arabicsv.txt`).
 
 Twelve Bibles ship pre-configured in `bibles.toml`: English, Biblical Hebrew,
 Koine Greek, Modern Hebrew, Spanish, German, French, Russian, Portuguese,
@@ -215,8 +220,8 @@ project deliberately does not do.
 
 Both readers list a credit line for each loaded text (the `attribution` key in
 `bibles.toml`) at the foot of the page. Licences were checked on 2026-10-18
-against the sources linked below. "Unverified" means no statement from the
-rightsholder was found.
+(the eBible.org texts on 2026-11-07) against the sources linked below.
+"Unverified" means no statement from the rightsholder was found.
 
 | Text / audio | Licence | Checked against | Attribution |
 |---|---|---|---|
@@ -225,12 +230,15 @@ rightsholder was found.
 | King James Version | Public domain outside the UK; Crown rights in the UK | Unverified: Cambridge University Press's rights page returned HTTP 403; wording from [bible.com](https://www.bible.com/versions/1) | Not required outside the UK; credited anyway |
 | Byzantine Majority Text (Robinson-Pierpont) | Unlicense (public domain) | [byztxt LICENSE.txt](https://github.com/byztxt/byzantine-majority-text/blob/master/LICENSE.txt) | None required |
 | Delitzsch Hebrew NT | Unverified: the source repo states no licence | [HebrewNewTestament/HebDelitzsch](https://github.com/HebrewNewTestament/HebDelitzsch) | Credited anyway |
-| getbible.net texts (valera, luther1545, ls1910, synodal, almeida, riveduta, statenvertaling, arabicsv) | As quoted in `bibles.toml`. valera and ls1910 say "Copyrighted; Permission to distribute granted to CrossWire", arabicsv says non-commercial "in SWORD format" only, almeida says GPL | [getbible translations.json](https://api.getbible.net/v2/translations.json): third-party metadata, unverified with the rightsholders | Module licence quoted |
+| getbible.net texts (luther1545, synodal, almeida, riveduta, statenvertaling) | As quoted in `bibles.toml`; almeida says GPL | [getbible translations.json](https://api.getbible.net/v2/translations.json): third-party metadata, unverified with the rightsholders | Module licence quoted |
+| eBible.org texts: Reina-Valera 1909 (valera), Louis Segond 1910 (ls1910), Smith & Van Dyke (arabicsv) | Public domain: eBible.org says so, and all three were published before 1931 | eBible.org pages for [spaRV1909](https://ebible.org/find/show.php?id=spaRV1909), [fraLSG](https://ebible.org/find/show.php?id=fraLSG) and [arb-vd](https://ebible.org/find/show.php?id=arb-vd) | None required; credited anyway |
 | Hebrew OT audio, Faith Comes By Hearing (HBRHMTN1DA) | Free; the [Bible Brain licence](https://www.faithcomesbyhearing.com/bible-brain/license) requires free access for end users and posted copyright notices | The fileset's own copyright notice is unverified | Local playback only; never in the Docker image or on Pages |
 
 Since 2026-11-07 the GitHub Pages site leaves out the Delitzsch Hebrew NT,
-valera, ls1910 and arabicsv, because their stated terms don't clearly let a
-public site serve them. They still load locally once their files are in `data/`.
+whose source states no licence; it still loads locally once its file is in
+`data/`. valera, ls1910 and arabicsv were dropped the same day over their
+CrossWire module terms and returned on 2026-11-08 from eBible.org's
+public-domain copies (`scripts/convert_ebible.py`), with the same ids and refs.
 
 NASB (Lockman Foundation copyright) was removed from every served config on
 2026-10-23. Older commits still contain NASB text. Rewriting git history needs
