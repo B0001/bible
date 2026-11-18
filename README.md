@@ -10,6 +10,14 @@ English matching is **stem-aware** (knowing `run` also credits `running` and
 `ran`); Hebrew strips nikudim/cantillation so vocab matches any pointed text;
 Greek strips diacritics.
 
+> **Status: maintenance mode** (since 2026-11-18). Bible Dash stays free and online
+> as the GitHub Pages reader. It gets fixes for security, broken builds and text
+> rights or attribution, and nothing else: no new features, languages or texts.
+> Dependencies are pinned (`uv.lock`, exported to `constraints.txt`), so installs
+> and CI stay reproducible. Bump them deliberately, with the command at the top of
+> `constraints.txt`. There is no hosted Dash server; `RUNBOOK_CLOUD_RUN.md` covers
+> deploying one.
+
 ## This repo is also a Claude Code skills marketplace
 
 The techniques here are reusable well beyond scripture. `skills/` packages them
@@ -293,8 +301,8 @@ docker run -p 8050:8050 bible-reader   # serves the pre-graded sample data
 Optional extras:
 
 ```bash
-pip install -e '.[lexical]'         # wordfreq (verse_effort / --effort)
-pip install -e '.[semantic]'        # spaCy (--semantic)
+pip install -c constraints.txt -e '.[lexical]'    # wordfreq (verse_effort / --effort)
+pip install -c constraints.txt -e '.[semantic]'   # spaCy (--semantic)
 python -m spacy download en_core_web_md
 ```
 

@@ -246,7 +246,7 @@ A second branch feeds the static site and the published dataset:
 ## Running
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
+python3 -m venv .venv && .venv/bin/pip install -c constraints.txt -e '.[dev]'
 
 # Run the scoring pipeline on the bundled sample data
 .venv/bin/python parser.py --bible sample/kjv_sample.txt \
@@ -271,12 +271,14 @@ block in `pyproject.toml`.
 
 ## Deployment / infra
 
-One `Dockerfile` on `python:3.12-slim`: installs from `requirements.txt`,
+One `Dockerfile` on `python:3.12-slim`: installs `requirements.txt` under `-c constraints.txt`,
 downloads NLTK stopwords, copies `bibles.toml` + `scripts/`, pre-grades the
 KJV sample to `out/kjv_graded.csv`, and serves via gunicorn
 (`dash_app:server`) on `0.0.0.0:8050` with a `/health` endpoint.
 `requirements.txt` mirrors the core pyproject deps plus `psycopg`;
-`pyproject.toml` is canonical.
+`pyproject.toml` is canonical for ranges. Exact versions come from `uv.lock`, exported to
+`constraints.txt`, which the Dockerfile and every CI job install under (maintenance mode,
+README). Regenerate it whenever `uv.lock` changes.
 
 The image runs **non-root (uid 10001) with a read-only root filesystem**, which
 constrains what it may assume:
