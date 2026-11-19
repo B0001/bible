@@ -173,7 +173,9 @@ SPEC.md §4; the dataset fits in memory so no cluster is needed.)
   from byztxt CSV files), `convert_delitzsch_nt.py` (Hebrew NT from
   HebrewNewTestament/HebDelitzsch OSIS), `convert_ebible.py` (public-domain
   Spanish/French/Arabic from eBible.org, written under the getbible-era file and
-  book names so refs don't change).
+  book names so refs don't change; `FIXES` restores LS1910's division of Job
+  34:36-37 and Mark 10:52, and fails the run, Pages deploy included, if eBible
+  edits those verses).
 - **`scripts/export_dataset.py`** — builds a HuggingFace-ready dataset in
   `out/dataset/` from `site/data/` (run `export_static.py` first); uploading
   needs `pip install '.[dataset]'` (the Hub CLI is an extra, not a core dep —
