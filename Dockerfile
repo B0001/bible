@@ -3,8 +3,8 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Install dependencies first for better layer caching.
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt constraints.txt ./
+RUN pip install --no-cache-dir -c constraints.txt -r requirements.txt
 
 # NLTK stopwords corpus is needed by the Snowball stemmer (ignore_stopwords=True).
 RUN python -m nltk.downloader -d /usr/share/nltk_data stopwords
