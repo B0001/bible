@@ -6,7 +6,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts"))
 
 import pytest
-from convert_ebible import CODES, TEXTS, convert_lines
+from convert_ebible import CODES, FIXES, TEXTS, apply_fixes, convert_lines
 
 
 def _lines(codes=CODES, text="Texto [añadido]."):
@@ -43,3 +43,22 @@ def test_text_is_nfc_like_the_getbible_copies():
 def test_bad_sources_are_refused(lines, message):
     with pytest.raises(ValueError, match=message):
         convert_lines(lines, TEXTS["fraLSG"][1])
+
+
+def test_lsg_fixes_restore_the_1910_division():
+    (job, _), (mark, _) = FIXES["fraLSG"]
+    src = ["JOB 34:35 a", *job, "JOB 35:1 b", "MAR 10:51 c", *mark, "MAR 11:1 d"]
+    refs = [" ".join(ln.split()[:2]) for ln in apply_fixes(src, FIXES["fraLSG"])]
+    assert refs == ["JOB 34:35", "JOB 34:36", "JOB 34:37", "JOB 35:1",
+                    "MAR 10:51", "MAR 10:52", "MAR 11:1"]
+    for old, new in FIXES["fraLSG"]:  # only the verse boundary moves
+        words = [" ".join(ln.split(" ", 2)[2] for ln in lines).split() for lines in (old, new)]
+        assert words[0] == words[1]
+
+
+def test_lsg_fixes_fail_loudly_once_ebible_changes_the_verses():
+    job, job_1910 = FIXES["fraLSG"][0]
+    with pytest.raises(ValueError, match="JOB 34:36 fix matches the source 0 times"):
+        apply_fixes(job_1910, FIXES["fraLSG"])  # eBible restored 34:37 itself
+    with pytest.raises(ValueError, match="2 times"):
+        apply_fixes(job + job, FIXES["fraLSG"])

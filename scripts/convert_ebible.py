@@ -79,6 +79,49 @@ TEXTS = {
     "arb-vd": ("data/arabicsv.txt", AR, False),
 }
 
+# eBible's fraLSG (2026-10-30) breaks LS1910's verse division twice, against
+# the getbible copy it replaced and the KJV: it runs Job 34:37
+# into 34:36, so 34:37 (and any read mark on it) vanishes, and splits Mark
+# 10:52 into 52 and a 53. Each fix is (eBible's exact lines, the 1910 lines),
+# words unchanged; apply_fixes refuses a source that lacks those exact lines,
+# so an upstream edit to these verses fails loudly instead of being re-split.
+# Left as eBible divides them (same words, a phrase moved across the verse
+# boundary, verse count unchanged): Nombres 1:1-2, Psaumes 106:45-46,
+# Matthieu 19:18-19, Luc 4:18-19, Jean 9:16-17, Romains 15:9-10,
+# 1 Corinthiens 6:9-10, 2 Corinthiens 4:17-18, 2 Timothée 1:8-9, Tite 3:8-9,
+# Hébreux 5:7-8, 6:13-14 and 12:28-29, 1 Pierre 1:15-16, 2 Pierre 3:2-3,
+# 1 Jean 5:20-21 and Apocalypse 1:17-18.
+FIXES = {
+    "fraLSG": [
+        (["JOB 34:36 Qu’il continue donc à être éprouvé, Puisqu’il répond comme font les "
+          "méchants! Car il ajoute à ses fautes de nouveaux péchés; Il bat des mains au "
+          "milieu de nous, Il multiplie ses paroles contre Dieu."],
+         ["JOB 34:36 Qu’il continue donc à être éprouvé, Puisqu’il répond comme font les "
+          "méchants!",
+          "JOB 34:37 Car il ajoute à ses fautes de nouveaux péchés; Il bat des mains au "
+          "milieu de nous, Il multiplie ses paroles contre Dieu."]),
+        (["MAR 10:52 Et Jésus lui dit: Va, ta foi t’a sauvé.",
+          "MAR 10:53 Aussitôt il recouvra la vue, et suivit Jésus dans le chemin."],
+         ["MAR 10:52 Et Jésus lui dit: Va, ta foi t’a sauvé. Aussitôt il recouvra la vue, "
+          "et suivit Jésus dans le chemin."]),
+    ],
+}
+
+
+def apply_fixes(lines, fixes):
+    """Swap each fix's run of source lines for its replacement.
+
+    Raises ValueError unless every run occurs exactly once, verbatim.
+    """
+    for old, new in fixes:
+        at = [i for i in range(len(lines)) if lines[i:i + len(old)] == old]
+        if len(at) != 1:
+            ref = " ".join(old[0].split()[:2])
+            raise ValueError(f"the {ref} fix matches the source {len(at)} times, not once: "
+                             "eBible changed it, so check the verses and update or drop the fix")
+        lines = lines[:at[0]] + new + lines[at[0] + len(old):]
+    return lines
+
 
 def convert_lines(lines, names, strip_brackets=False):
     """eBible VPL lines (``GEN 1:1 text``) -> ``[(ref, text)]`` using ``names``.
@@ -131,7 +174,8 @@ def main():
     args = ap.parse_args()
     default_out, names, strip_brackets = TEXTS[args.translation]
     out = args.out or default_out
-    verses = convert_lines(fetch_lines(args.translation), names, strip_brackets)
+    lines = apply_fixes(fetch_lines(args.translation), FIXES.get(args.translation, []))
+    verses = convert_lines(lines, names, strip_brackets)
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
         f.writelines(f"{text} -- {ref}\n" for ref, text in verses)
